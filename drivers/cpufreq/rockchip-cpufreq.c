@@ -29,7 +29,7 @@
 
 #include "../clk/rockchip/clk.h"
 
-#define MAX_PROP_NAME_LEN	3
+#define MAX_PROP_NAME_LEN	8
 #define LEAKAGE_TABLE_END	~1
 #define INVALID_VALUE		0xff
 

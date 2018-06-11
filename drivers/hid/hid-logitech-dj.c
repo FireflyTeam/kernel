@@ -374,9 +374,9 @@ static void logi_dj_recv_add_djhid_device(struct dj_receiver_dev *djrcv_dev,
 	struct dj_device *dj_dev;
 
 	/* Device index goes from 1 to 6, we need 3 bytes to store the
-	 * semicolon, the index, and a null terminator
+	 * semicolon, the index, and a null terminator.  +2 for print truncate warn
 	 */
-	unsigned char tmpstr[3];
+	unsigned char tmpstr[5];
 
 	if (dj_report->report_params[DEVICE_PAIRED_PARAM_SPFUNCTION] &
 	    SPFUNCTION_DEVICE_LIST_EMPTY) {

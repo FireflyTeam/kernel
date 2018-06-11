@@ -1042,7 +1042,7 @@ void
 dhd_conf_add_pkt_filter(dhd_pub_t *dhd)
 {
 	int i, j;
-	char str[12];
+	char str[13];
 #define MACS "%02x%02x%02x%02x%02x%02x"
 
 	/*

@@ -502,7 +502,7 @@ struct rpc_clnt *rpc_create(struct rpc_create_args *args)
 		.servername = args->servername,
 		.bc_xprt = args->bc_xprt,
 	};
-	char servername[48];
+	char servername[108];
 
 	if (args->bc_xprt) {
 		WARN_ON(args->protocol != XPRT_TRANSPORT_BC_TCP);

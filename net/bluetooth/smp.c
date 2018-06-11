@@ -3285,7 +3285,7 @@ static ssize_t le_min_key_size_read(struct file *file,
 				     size_t count, loff_t *ppos)
 {
 	struct hci_dev *hdev = file->private_data;
-	char buf[4];
+	char buf[5];
 
 	snprintf(buf, sizeof(buf), "%2u\n", SMP_DEV(hdev)->min_key_size);
 
@@ -3329,7 +3329,7 @@ static ssize_t le_max_key_size_read(struct file *file,
 				     size_t count, loff_t *ppos)
 {
 	struct hci_dev *hdev = file->private_data;
-	char buf[4];
+	char buf[5];
 
 	snprintf(buf, sizeof(buf), "%2u\n", SMP_DEV(hdev)->max_key_size);
 
