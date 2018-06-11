@@ -459,7 +459,9 @@ si_chipid_fixup(si_t *sih)
 
 /* suppress warning on line with: bustype != BUSTYPE(bustype) */
 #pragma GCC diagnostic push
+#if __GNUC__ >= 6
 #pragma GCC diagnostic ignored "-Wtautological-compare"
+#endif
 /**
  * Allocate an si handle. This function may be called multiple times.
  *
