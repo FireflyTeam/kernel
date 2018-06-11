@@ -457,6 +457,9 @@ si_chipid_fixup(si_t *sih)
 	}
 }
 
+/* suppress warning on line with: bustype != BUSTYPE(bustype) */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wtautological-compare"
 /**
  * Allocate an si handle. This function may be called multiple times.
  *
@@ -676,6 +679,7 @@ exit:
 
 	return NULL;
 }
+#pragma GCC diagnostic pop
 
 /** may be called with core in reset */
 void
