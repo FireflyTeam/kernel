@@ -14,7 +14,7 @@
  *     This file is distributed in the hope that it will be useful,
  *     but WITHOUT ANY WARRANTY; without even the implied warranty of
  *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *     GNU General Public License for more details.                                                                                            
+ *     GNU General Public License for more details.
  *
  * Or, alternatively,
  *
@@ -104,7 +104,7 @@
            pinctrl-0 = <&led_user>;
        };
    };
-   
+
    /* GPIO1_C7 controls both VCC18_MIPI and VCC28_MIPI, also AF28 */
         vcc_mipi: vcc_mipi {
 		compatible = "regulator-fixed";
@@ -149,7 +149,7 @@
 	};
 };
 
-&i2c1 {	
+&i2c1 {
 	mpu6500@68 {
 		status = "disabled";
 		compatible = "invensense,mpu6500";
@@ -163,7 +163,7 @@
 		orientation-z= <1>;
 		mpu-debug = <1>;
 	};
-	
+
 	ov13850: ov13850@36 {
 		compatible = "ovti,ov13850";
 		status = "okay";
@@ -172,17 +172,18 @@
 		clock-names = "xvclk";
 
 		/* conflict with csi-ctl-gpios */
-		reset-gpios = <&gpio1 20 GPIO_ACTIVE_HIGH>;
-		pwdn-gpios = <&gpio2 0 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio2 6 GPIO_ACTIVE_HIGH>;  /*GPIO2_A6 MIP_RST*/
+		pwdn-gpios = <&gpio3 27 GPIO_ACTIVE_HIGH>;   /*GPIO3_D3 VSYNC*/
 		pinctrl-names = "rockchip,camera_default", "rockchip,camera_sleep";
 		//pinctrl-0 = <&cif_clkout>;
 		pinctrl-0 = <&pwdn_cam0 &mipi_rst>;
 		pinctrl-1 = <&cam0_default_pins>;
 		pinctrl-2 = <&cam0_sleep_pins>;
 
-		avdd-supply = <&vcc_mipi>; /* VCC28_MIPI */
-		dovdd-supply = <&vcc_mipi>; /* VCC18_MIPI */
-		dvdd-supply = <&dvdd_1v2>; /* DVDD_1V2 */
+		rockchip,camera-module-index = <0>;
+		rockchip,camera-module-facing = "back";
+		rockchip,camera-module-name = "CMK-CT0116";
+		rockchip,camera-module-lens-name = "Largan-50013A1";
 
 		port {
 			ucam_out0: endpoint {
@@ -200,17 +201,18 @@
 		clock-names = "xvclk";
 
 		/* conflict with csi-ctl-gpios */
-		reset-gpios = <&gpio1 20 GPIO_ACTIVE_HIGH>;
-		pwdn-gpios = <&gpio2 1 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio2 1 GPIO_ACTIVE_HIGH>;		//GPIO2_A1
+		pwdn-gpios = <&gpio3 28 GPIO_ACTIVE_HIGH>;		//GPIO3_D4
 		pinctrl-names = "rockchip,camera_default", "rockchip,camera_sleep";
 		pinctrl-0 = <&pwdn_cam1>;
 		//pinctrl-0 = <&cif_clkout>;
 		pinctrl-1 = <&cam0_default_pins>;
 		pinctrl-2 = <&cam0_sleep_pins>;
+		rockchip,camera-module-index = <1>;
+		rockchip,camera-module-facing = "back";
+		rockchip,camera-module-name = "CMK-CT0116";
+		rockchip,camera-module-lens-name = "Largan-50013A1";
 
-		avdd-supply = <&vcc_mipi>; /* VCC28_MIPI */
-		dovdd-supply = <&vcc_mipi>; /* VCC18_MIPI */
-		dvdd-supply = <&dvdd_1v2>; /* DVDD_1V2 */
 
 		port {
 			ucam_out1: endpoint {
@@ -237,12 +239,12 @@
 	status = "okay";
 	i2c-scl-rising-time-ns = <300>;
 	i2c-scl-falling-time-ns = <15>;
-	
-	
+
+
 };
 
 &i2s1 {
-	status = "okay";	
+	status = "okay";
 };
 
 &spi2 {
@@ -250,7 +252,7 @@
 	max-freq = <48000000>;
 	dev-port = <0>;
 
-        spi_wk2xxx: spi_wk2xxx@00{                                       
+        spi_wk2xxx: spi_wk2xxx@00{
 		status = "okay";
 		compatible = "firefly,spi-wk2xxx";
 		reg = <0x00>;
@@ -300,7 +302,7 @@
 	        <1 RK_PA1 RK_FUNC_GPIO &pcfg_pull_up>;
 	        };
 	};
-	
+
 	cam_pins {
 		cam0_default_pins: cam0-default-pins {
 			rockchip,pins =
@@ -312,16 +314,16 @@
 		};
 		pwdn_cam0: pwdn-cma0 {
 			rockchip,pins =
-				<2 0 RK_FUNC_GPIO &pcfg_pull_none>;
+				<3 27 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 		pwdn_cam1: pwdn-cma1 {
 			rockchip,pins =
 				<2 1 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
-		
+
 		mipi_rst: mipi-rst {
 			rockchip,pins =
-				<1 20 RK_FUNC_GPIO &pcfg_pull_none>;
+				<2 6 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 
 	};
@@ -345,7 +347,7 @@
                         rockchip,pins = <0 13 RK_FUNC_GPIO &pcfg_pull_down>;
                 };
         };
-         rk809 {                                                                                                                                                                                         
+         rk809 {
 		 spk_ctl_gpio: spk_ctl_gpio {
 	                 rockchip,pins = <0 RK_PB1 RK_FUNC_GPIO &pcfg_pull_up_20ma>;
 	         };

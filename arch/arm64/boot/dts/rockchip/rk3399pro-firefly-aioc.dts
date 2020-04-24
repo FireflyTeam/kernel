@@ -78,45 +78,6 @@
 	status = "okay";
 	i2c-scl-rising-time-ns = <300>;
 	i2c-scl-falling-time-ns = <15>;
-
-	/delete-node/ ov13850@36;
-	/delete-node/ ov13850@46;
-
-	//cam0
-	XC6130: XC6130@46{
-		status = "okay";
-		compatible = "firefly,xc7022";
-		reg = <0x23>;
-		reset-gpios = <&gpio2 6 GPIO_ACTIVE_HIGH>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&xc6130_reset_pin>;
-
-		port {
-			ucam_out0: endpoint {
-				remote-endpoint = <&mipi_in_ucam0>;
-				data-lanes = <1 2>;
-			};
-		};
-	};
-
-	//cam1
-	XC7022: XC7022@36{
-		status = "okay";
-		compatible = "firefly,xc7022";
-		reg = <0x1b>;
-		reset-gpios = <&gpio2 1 GPIO_ACTIVE_HIGH>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&xc7022_reset_pin>;
-
-		port {
-			ucam_out1: endpoint {
-				remote-endpoint = <&mipi_in_ucam1>;
-				data-lanes = <1 2>;
-			};
-		};
-	};
-
-
 };
 
 
@@ -346,15 +307,5 @@
 					rockchip,pins =
 							<2 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;
 			};
-	};
-
-	camera-pins{
-		xc7022_reset_pin: xc7022-reset-pin{
-			rockchip,pins = <2 1 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
-
-		xc6130_reset_pin: xc6130-reset-pin{
-			rockchip,pins = <2 6 RK_FUNC_GPIO &pcfg_pull_none>;
-		};
 	};
 };
