@@ -1,0 +1,360 @@
+/*
+ * Copyright (c) 2016 Fuzhou Rockchip Electronics Co., Ltd
+ *
+ * This file is dual-licensed: you can use it either under the terms
+ * of the GPL or the X11 license, at your option. Note that this dual
+ * licensing only applies to this file, and not this project as a
+ * whole.
+ *
+ *  a) This file is free software; you can redistribute it and/or
+ *     modify it under the terms of the GNU General Public License as
+ *     published by the Free Software Foundation; either version 2 of the
+ *     License, or (at your option) any later version.
+ *
+ *     This file is distributed in the hope that it will be useful,
+ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *     GNU General Public License for more details.
+ *
+ * Or, alternatively,
+ *
+ *  b) Permission is hereby granted, free of charge, to any person
+ *     obtaining a copy of this software and associated documentation
+ *     files (the "Software"), to deal in the Software without
+ *     restriction, including without limitation the rights to use,
+ *     copy, modify, merge, publish, distribute, sublicense, and/or
+ *     sell copies of the Software, and to permit persons to whom the
+ *     Software is furnished to do so, subject to the following
+ *     conditions:
+ *
+ *     The above copyright notice and this permission notice shall be
+ *     included in all copies or substantial portions of the Software.
+ *
+ *     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ *     EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+ *     OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ *     NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+ *     HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ *     WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ *     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ *     OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+/dts-v1/;
+#include "rk3399pro-firefly-port.dtsi"
+#include "rk3399pro-firefly-pcie.dtsi"
+
+/ {
+	model = "RK3399pro-firefly-aioc board";
+	compatible = "rockchip,rk3399pro-firefly-aioc", "rockchip,rk3399pro";
+
+	usbacm_video_control: usbacm-video-control {
+		compatible = "rockchip,usbacm-video-control";
+		status = "disabled";
+	};
+
+	/delete-node/ vcc5v0-typec;
+	mcp251x_clk: mcp251x-clk {
+        	compatible = "fixed-clock";
+        	#clock-cells = <0>;
+        	clock-frequency = <8000000>;        //MCP2515_CAN模块的晶振为8MHz
+        };
+
+        vcc_hub: vcc-hub-regulator {
+                compatible = "regulator-fixed";
+                enable-active-high;
+                regulator-always-on;
+                regulator-boot-on;
+                gpio = <&gpio2 RK_PA4 GPIO_ACTIVE_HIGH>;
+                pinctrl-names = "default";
+                pinctrl-0 = <&hub_drv>;
+                regulator-name = "vcc_hub";
+        };
+
+};
+
+
+&i2c1 {
+	status = "okay";
+	i2c-scl-rising-time-ns = <300>;
+	i2c-scl-falling-time-ns = <15>;
+
+	/delete-node/ ov13850@36;
+	/delete-node/ ov13850@46;
+
+	//cam0
+	XC6130: XC6130@46{
+		status = "okay";
+		compatible = "firefly,xc7022";
+		reg = <0x23>;
+		reset-gpios = <&gpio2 6 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&xc6130_reset_pin>;
+
+		port {
+			ucam_out0: endpoint {
+				remote-endpoint = <&mipi_in_ucam0>;
+				data-lanes = <1 2>;
+			};
+		};
+	};
+
+	//cam1
+	XC7022: XC7022@36{
+		status = "okay";
+		compatible = "firefly,xc7022";
+		reg = <0x1b>;
+		reset-gpios = <&gpio2 1 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&xc7022_reset_pin>;
+
+		port {
+			ucam_out1: endpoint {
+				remote-endpoint = <&mipi_in_ucam1>;
+				data-lanes = <1 2>;
+			};
+		};
+	};
+
+
+};
+
+
+&cif_isp1 {
+    status = "okay";
+};
+
+&dp_sound {
+	status = "okay";
+};
+
+&hdmi_sound {
+	status = "okay";
+};
+
+&spdif {
+       status = "okay";
+};
+
+&hdmi_in_vopl {
+	status = "disabled";
+};
+
+&hdmi_in_vopb {
+	status = "okay";
+};
+
+&dp_in_vopb {
+	status = "disabled";
+};
+
+&dp_in_vopl {
+	status = "okay";
+};
+
+&route_hdmi {
+        status = "okay";
+        logo,mode = "center";
+};
+
+&vopb {
+    assigned-clocks = <&cru DCLK_VOP0_DIV>;
+    assigned-clock-parents = <&cru PLL_VPLL>;
+};
+&vopl {
+    assigned-clocks = <&cru DCLK_VOP1_DIV>;
+    assigned-clock-parents = <&cru PLL_CPLL>;
+};
+
+// DP
+&i2c8 {
+	status = "okay";
+};
+
+&fusb0 {
+	status = "okay";
+};
+
+&vcc5v0_host {
+       gpio = <&gpio2 RK_PA2 GPIO_ACTIVE_HIGH>;
+};
+
+&cdn_dp {
+        status = "okay";
+        extcon = <&fusb0>;
+        phys = <&tcphy0_dp>;
+};
+
+// mipi csi
+/*
+&ov13850 {
+	status = "disabled";
+};
+
+&ov13850_1 {
+	status = "disabled";
+};
+*/
+
+&vcc_mipi {
+	status = "disabled";
+};
+
+&dvdd_1v2 {
+	status = "disabled";
+};
+
+&rkisp1_0 {
+	status = "okay";
+};
+
+&mipi_dphy_rx0 {
+	status = "okay";
+};
+
+&isp0_mmu {
+	status = "okay";
+};
+
+&rkisp1_1 {
+	status = "okay";
+};
+
+&mipi_dphy_tx1rx1 {
+	status = "okay";
+};
+
+&isp1_mmu {
+	status = "okay";
+};
+
+&i2c4 {
+	status = "okay";
+	i2c-scl-rising-time-ns = <345>;
+	i2c-scl-falling-time-ns = <11>;
+
+};
+
+
+// LED
+&power_led {
+	gpios = <&gpio0 RK_PB1 GPIO_ACTIVE_HIGH>;
+};
+
+&led_power {
+        rockchip,pins = <0 RK_PB1 RK_FUNC_GPIO &pcfg_pull_none>;
+};
+
+
+&pcie0 {
+	/delete-property/ gpio;
+};
+
+&vcc3v3_3g {
+	gpio = <&gpio3 RK_PD6 GPIO_ACTIVE_HIGH>;
+};
+
+&pcie_3g_drv {
+	rockchip,pins =<3 RK_PD6 RK_FUNC_GPIO &pcfg_pull_up>;
+};
+
+
+
+/* spi to uart */
+&uart4 {
+    status = "disabled";
+};
+
+&spi1 {
+        status = "okay";
+	max-freq = <48000000>;
+	dev-port = <0>;
+	spi_wk2@00{
+        	status = "okay";
+        	compatible = "firefly,spi-wk2xxx";
+        	reg = <0x00>;
+        	spi-max-frequency = <10000000>;
+        	reset-gpio = <&gpio2 RK_PA0 GPIO_ACTIVE_HIGH>;
+        	irq-gpio = <&gpio3 RK_PB2 IRQ_TYPE_EDGE_FALLING>;
+        	cs-gpio = <&gpio1 RK_PB2 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+&spi2 {
+        status = "okay";
+	spi_wk2xxx@00{
+		status = "disabled";
+	};
+	mcp2515: can@00 {
+		status = "okay";
+		compatible = "microchip,mcp2515";
+		reg = <0x00>;
+		clocks = <&mcp251x_clk>;
+		interrupt-parent = <&gpio0>;
+		interrupts = <1 IRQ_TYPE_EDGE_FALLING>;
+		spi-max-frequency = <24000000>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&can0_pins>;
+		poll_mode = <0>;
+		enable_dma = <1>;
+	};
+};
+
+&rk809_codec {
+	hp-det = <&gpio0 RK_PB5 GPIO_ACTIVE_HIGH>;
+	spk-ctl = <&gpio2 RK_PA5 GPIO_ACTIVE_HIGH>;
+	hp-ctl-gpios = <&gpio3 RK_PD7 GPIO_ACTIVE_HIGH>;
+	io-channels = <0>;
+};
+
+&spk_ctl_gpio {
+	rockchip,pins = <2 RK_PA5 RK_FUNC_GPIO &pcfg_pull_up_20ma>;
+};
+
+
+&vdd1v5_dvp {
+	regulator-min-microvolt = <3300000>;
+	regulator-max-microvolt = <3300000>;
+};
+
+&i2c4 {
+	status = "okay";
+
+    wdt_pc9202: wdt-pc9202@3c {
+        status = "okay";
+        compatible = "firefly,pc9202";
+        reg = <0x3c>;
+    };
+};
+
+&pinctrl {
+	hub {
+			hub_drv: hub-drv {
+		rockchip,pins =
+			<2 RK_PA4 RK_FUNC_GPIO &pcfg_pull_up>;
+			};
+	};
+
+	can0 {
+			can0_pins: can0-pins {
+		rockchip,pins =
+			<0 RK_PA1 RK_FUNC_GPIO &pcfg_pull_none>;
+			};
+	};
+	usb2 {
+			host_vbus_drv: host-vbus-drv {
+					rockchip,pins =
+							<2 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;
+			};
+	};
+
+	camera-pins{
+		xc7022_reset_pin: xc7022-reset-pin{
+			rockchip,pins = <2 1 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		xc6130_reset_pin: xc6130-reset-pin{
+			rockchip,pins = <2 6 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+};
