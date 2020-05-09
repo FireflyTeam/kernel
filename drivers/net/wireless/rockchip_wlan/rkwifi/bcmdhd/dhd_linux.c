@@ -8158,6 +8158,9 @@ dhd_stop(struct net_device *net)
 	dhd->pub.up = 0;
 #endif /* WL_CFG80211 */
 
+	if (!dhd_download_fw_on_driverload)
+		dhd->pub.disabling = TRUE;
+
 #ifdef WL_CFG80211
 	if (ifidx == 0) {
 		dhd_if_t *ifp;
@@ -8313,6 +8316,10 @@ exit:
 		DHD_OS_WAKE_LOCK_DESTROY(dhd);
 		dhd->dhd_state &= ~DHD_ATTACH_STATE_WAKELOCKS_INIT;
 	}
+
+	if (!dhd_download_fw_on_driverload)
+		dhd->pub.disabling = FALSE;
+
 	printf("%s: Exit\n", __FUNCTION__);
 
 	return 0;
@@ -13307,21 +13314,26 @@ dhd_reboot_callback(struct notifier_block *this, unsigned long code, void *unuse
 	return NOTIFY_DONE;
 }
 
+#ifdef CONFIG_WIFI_LOAD_DRIVER_WHEN_KERNEL_BOOTUP
 static int wifi_init_thread(void *data)
 {
 	dhd_module_init();
 
 	return 0;
 }
+#endif
 
 int rockchip_wifi_init_module_rkwifi(void)
 {
+#ifdef CONFIG_WIFI_LOAD_DRIVER_WHEN_KERNEL_BOOTUP
 	struct task_struct *kthread = NULL;
 
 	kthread = kthread_run(wifi_init_thread, NULL, "wifi_init_thread");
 	if (IS_ERR(kthread))
 		pr_err("create wifi_init_thread failed.\n");
-
+#else
+	dhd_module_init();
+#endif
 	return 0;
 }
 

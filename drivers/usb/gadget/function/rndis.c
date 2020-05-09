@@ -690,9 +690,8 @@ static int rndis_reset_response(struct rndis_params *params,
 {
 	rndis_reset_cmplt_type *resp;
 	rndis_resp_t *r;
-
-	u32 length;
 	u8 *xbuf;
+	u32 length;
 
 	/* drain the response queue */
 	while ((xbuf = rndis_get_next_response(params, &length)))
@@ -867,6 +866,9 @@ int rndis_msg_parser(struct rndis_params *params, u8 *buf)
 		 */
 		pr_warning("%s: unknown RNDIS message 0x%08X len %d\n",
 			__func__, MsgType, MsgLength);
+		/* Garbled message can be huge, so limit what we display */
+		if (MsgLength > 16)
+			MsgLength = 16;
 		print_hex_dump_bytes(__func__, DUMP_PREFIX_OFFSET,
 				     buf, MsgLength);
 		break;

@@ -1167,7 +1167,10 @@ static void dwc2_update_urb_state_abn(struct dwc2_hsotg *hsotg,
 
 	if (urb->actual_length + xfer_length > urb->length) {
 		dev_warn(hsotg->dev, "%s(): trimming xfer length\n", __func__);
-		xfer_length = urb->length - urb->actual_length;
+		if (urb->length & 0x3)
+			xfer_length = 0;
+		else
+			xfer_length = urb->length - urb->actual_length;
 	}
 
 	urb->actual_length += xfer_length;
@@ -1218,7 +1221,10 @@ static void dwc2_hc_nak_intr(struct dwc2_hsotg *hsotg,
 	 * avoid interrupt storms we'll wait before retrying if we've got
 	 * several NAKs. If we didn't do this we'd retry directly from the
 	 * interrupt handler and could end up quickly getting another
-	 * interrupt (another NAK), which we'd retry.
+	 * interrupt (another NAK), which we'd retry. Note that we do not
+	 * delay retries for IN parts of control requests, as those are expected
+	 * to complete fairly quickly, and if we delay them we risk confusing
+	 * the device and cause it issue STALL.
 	 *
 	 * Note that in DMA mode software only gets involved to re-send NAKed
 	 * transfers for split transactions, so we only need to apply this
@@ -1231,7 +1237,9 @@ static void dwc2_hc_nak_intr(struct dwc2_hsotg *hsotg,
 			qtd->error_count = 0;
 		qtd->complete_split = 0;
 		qtd->num_naks++;
-		qtd->qh->want_wait = qtd->num_naks >= DWC2_NAKS_BEFORE_DELAY;
+		qtd->qh->want_wait = qtd->num_naks >= DWC2_NAKS_BEFORE_DELAY &&
+				!(chan->ep_type == USB_ENDPOINT_XFER_CONTROL &&
+				  chan->ep_is_in);
 		dwc2_halt_channel(hsotg, chan, qtd, DWC2_HC_XFER_NAK);
 		goto handle_nak_done;
 	}
@@ -2030,8 +2038,6 @@ static void dwc2_hc_n_intr(struct dwc2_hsotg *hsotg, int chnum)
 			 hcint, hcintmsk, hcint & hcintmsk);
 	}
 
-	dwc2_writel(hcint, hsotg->regs + HCINT(chnum));
-
 	/*
 	 * If we got an interrupt after someone called
 	 * dwc2_hcd_endpoint_disable() we don't want to crash below
@@ -2043,6 +2049,8 @@ static void dwc2_hc_n_intr(struct dwc2_hsotg *hsotg, int chnum)
 
 	chan->hcint = hcint;
 	hcint &= hcintmsk;
+
+	dwc2_writel(hcint, hsotg->regs + HCINT(chnum));
 
 	/*
 	 * If the channel was halted due to a dequeue, the qtd list might

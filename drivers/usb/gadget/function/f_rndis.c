@@ -127,9 +127,9 @@ static struct usb_interface_descriptor rndis_control_intf = {
 	/* .bInterfaceNumber = DYNAMIC */
 	/* status endpoint is optional; this could be patched later */
 	.bNumEndpoints =	1,
-	.bInterfaceClass =	USB_CLASS_COMM,
-	.bInterfaceSubClass =   USB_CDC_SUBCLASS_ACM,
-	.bInterfaceProtocol =   USB_CDC_ACM_PROTO_VENDOR,
+	.bInterfaceClass =	USB_CLASS_WIRELESS_CONTROLLER,
+	.bInterfaceSubClass =	1,
+	.bInterfaceProtocol =   3,
 	/* .iInterface = DYNAMIC */
 };
 
@@ -188,9 +188,9 @@ rndis_iad_descriptor = {
 
 	.bFirstInterface =	0, /* XXX, hardcoded */
 	.bInterfaceCount = 	2,	// control + data
-	.bFunctionClass =	USB_CLASS_COMM,
-	.bFunctionSubClass =	USB_CDC_SUBCLASS_ETHERNET,
-	.bFunctionProtocol =	USB_CDC_PROTO_NONE,
+	.bFunctionClass =	USB_CLASS_WIRELESS_CONTROLLER,
+	.bFunctionSubClass =	1,
+	.bFunctionProtocol =	3,
 	/* .iFunction = DYNAMIC */
 };
 
@@ -384,6 +384,9 @@ static struct sk_buff *rndis_add_header(struct gether *port,
 {
 	struct sk_buff *skb2;
 
+	if (!skb)
+		return NULL;
+
 	skb2 = skb_realloc_headroom(skb, sizeof(struct rndis_packet_msg_type));
 	rndis_add_hdr(skb2);
 
@@ -466,9 +469,15 @@ static void rndis_command_complete(struct usb_ep *ep, struct usb_request *req)
 	/* received RNDIS command from USB_CDC_SEND_ENCAPSULATED_COMMAND */
 //	spin_lock(&dev->lock);
 	status = rndis_msg_parser(rndis->params, (u8 *) req->buf);
-	if (status < 0)
+	if (status < 0) {
 		pr_err("RNDIS command error %d, %d/%d\n",
 			status, req->actual, req->length);
+		/*
+		 * if command is error, req maybe an illegal pointer,
+		 * so we just return to avoid kernel panic
+		 */
+		return;
+	}
 
 	buf = (rndis_init_msg_type *)req->buf;
 

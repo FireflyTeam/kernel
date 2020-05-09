@@ -3,6 +3,8 @@
  * jx_h65 driver
  *
  * Copyright (C) 2019 Fuzhou Rockchip Electronics Co., Ltd.
+ *
+ * V0.0X01.0X01 add poweron function.
  */
 
 #include <linux/clk.h>
@@ -19,6 +21,8 @@
 #include <media/v4l2-async.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-subdev.h>
+
+#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x01)
 
 #ifndef V4L2_CID_DIGITAL_GAIN
 #define V4L2_CID_DIGITAL_GAIN		V4L2_CID_GAIN
@@ -47,7 +51,7 @@
 #define	ANALOG_GAIN_MIN			0x00
 #define	ANALOG_GAIN_MAX			0x7f
 #define	ANALOG_GAIN_STEP		1
-#define	ANALOG_GAIN_DEFAULT		0x30
+#define	ANALOG_GAIN_DEFAULT		0x0
 
 #define JX_H65_DIGI_GAIN_L_MASK		0x3f
 #define JX_H65_DIGI_GAIN_H_SHIFT	6
@@ -778,6 +782,9 @@ static int __jx_h65_power_on(struct jx_h65 *jx_h65)
 		goto disable_clk;
 	}
 
+	/* According to datasheet, at least 10ms for reset duration */
+	usleep_range(10 * 1000, 15 * 1000);
+
 	if (!IS_ERR(jx_h65->reset_gpio))
 		gpiod_set_value_cansleep(jx_h65->reset_gpio, 0);
 
@@ -910,6 +917,7 @@ static int jx_h65_set_ctrl(struct v4l2_ctrl *ctrl)
 
 	switch (ctrl->id) {
 	case V4L2_CID_EXPOSURE:
+		dev_dbg(&client->dev, "set expo: val: %d\n", ctrl->val);
 		/* 4 least significant bits of expsoure are fractional part */
 		ret = jx_h65_write_reg(jx_h65->client,
 				JX_H65_AEC_PK_LONG_EXPO_HIGH_REG,
@@ -919,12 +927,14 @@ static int jx_h65_set_ctrl(struct v4l2_ctrl *ctrl)
 				JX_H65_FETCH_LOW_BYTE_EXP(ctrl->val));
 		break;
 	case V4L2_CID_ANALOGUE_GAIN:
+		dev_dbg(&client->dev, "set a-gain: val: %d\n", ctrl->val);
 		ret |= jx_h65_write_reg(jx_h65->client,
 			JX_H65_AEC_PK_LONG_GAIN_REG, ctrl->val);
 		break;
 	case V4L2_CID_DIGITAL_GAIN:
 		break;
 	case V4L2_CID_VBLANK:
+		dev_dbg(&client->dev, "set vblank: val: %d\n", ctrl->val);
 		ret |= jx_h65_write_reg(jx_h65->client, JX_H65_REG_HIGH_VTS,
 			JX_H65_FETCH_HIGH_BYTE_VTS((ctrl->val + jx_h65->cur_mode->height)));
 		ret |= jx_h65_write_reg(jx_h65->client, JX_H65_REG_LOW_VTS,
@@ -1066,6 +1076,11 @@ static int jx_h65_probe(struct i2c_client *client,
 	struct v4l2_subdev *sd;
 	char facing[2];
 	int ret;
+
+	dev_info(dev, "driver version: %02x.%02x.%02x",
+		DRIVER_VERSION >> 16,
+		(DRIVER_VERSION & 0xff00) >> 8,
+		DRIVER_VERSION & 0x00ff);
 
 	jx_h65 = devm_kzalloc(dev, sizeof(*jx_h65), GFP_KERNEL);
 	if (!jx_h65)

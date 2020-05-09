@@ -146,6 +146,86 @@ int dwc3_gadget_set_link_state(struct dwc3 *dwc, enum dwc3_link_state state)
 }
 
 /**
+ * dwc3_gadget_resize_tx_fifos - reallocate fifo spaces for current use-case
+ * @dwc: pointer to our context structure
+ *
+ * This function will a best effort FIFO allocation in order
+ * to improve FIFO usage and throughput, while still allowing
+ * us to enable as many endpoints as possible.
+ *
+ * Keep in mind that this operation will be highly dependent
+ * on the configured size for RAM1 - which contains TxFifo -,
+ * the amount of endpoints enabled on coreConsultant tool, and
+ * the width of the Master Bus.
+ *
+ * In the ideal world, we would always be able to satisfy the
+ * following equation:
+ *
+ * ((512 + 2 * MDWIDTH-Bytes) + (Number of IN Endpoints - 1) * \
+ * (3 * (1024 + MDWIDTH-Bytes) + MDWIDTH-Bytes)) / MDWIDTH-Bytes
+ *
+ * Unfortunately, due to many variables that's not always the case.
+ */
+static int dwc3_gadget_resize_tx_fifos(struct dwc3 *dwc)
+{
+	int		last_fifo_depth = 0;
+	int		fifo_size;
+	int		mdwidth;
+	u8		num;
+
+	if (!dwc->needs_fifo_resize)
+		return 0;
+
+	mdwidth = DWC3_MDWIDTH(dwc->hwparams.hwparams0);
+
+	/* MDWIDTH is represented in bits, we need it in bytes */
+	mdwidth >>= 3;
+
+	for (num = 0; num < dwc->num_in_eps; num++) {
+		u8	epnum = (num << 1) | 1;
+		struct dwc3_ep  *dep = dwc->eps[epnum];
+		int	fifo_number = dep->number >> 1;
+		int	mult = 1;
+		int	tmp;
+
+		if (!(dep->flags & DWC3_EP_ENABLED))
+			continue;
+
+		if (usb_endpoint_xfer_bulk(dep->endpoint.desc) ||
+		    usb_endpoint_xfer_isoc(dep->endpoint.desc))
+			mult = 3;
+
+		/*
+		 * REVISIT: the following assumes we will always have enough
+		 * space available on the FIFO RAM for all possible use cases.
+		 * Make sure that's true somehow and change FIFO allocation
+		 * accordingly.
+		 *
+		 * If we have Bulk or Isochronous endpoints, we want
+		 * them to be able to be very, very fast. So we're giving
+		 * those endpoints a fifo_size which is enough for 3 full
+		 * packets
+		 */
+		tmp = mult * (dep->endpoint.maxpacket + mdwidth);
+		tmp += mdwidth;
+
+		fifo_size = DIV_ROUND_UP(tmp, mdwidth);
+
+		fifo_size |= (last_fifo_depth << 16);
+
+		dev_dbg(dwc->dev, "%s: FIFO Addr %04x Size %d\n",
+			dep->name, last_fifo_depth, fifo_size & 0xffff);
+
+		dwc3_writel(dwc->regs, DWC3_GTXFIFOSIZ(fifo_number),
+			    fifo_size);
+
+		last_fifo_depth += (fifo_size & 0xffff);
+	}
+
+	return 0;
+}
+
+/**
  * dwc3_ep_inc_trb() - Increment a TRB index.
  * @index - Pointer to the TRB index to increment.
  *
@@ -254,7 +334,7 @@ int dwc3_send_gadget_ep_cmd(struct dwc3_ep *dep, unsigned cmd,
 		struct dwc3_gadget_ep_cmd_params *params)
 {
 	struct dwc3		*dwc = dep->dwc;
-	u32			timeout = 500;
+	u32			timeout = 1000;
 	u32			reg;
 
 	int			cmd_status = 0;
@@ -337,20 +417,6 @@ int dwc3_send_gadget_ep_cmd(struct dwc3_ep *dep, unsigned cmd,
 	}
 
 	trace_dwc3_gadget_ep_cmd(dep, cmd, params, cmd_status);
-
-	if (ret == 0) {
-		switch (DWC3_DEPCMD_CMD(cmd)) {
-		case DWC3_DEPCMD_STARTTRANSFER:
-			dep->flags |= DWC3_EP_TRANSFER_STARTED;
-			break;
-		case DWC3_DEPCMD_ENDTRANSFER:
-			dep->flags &= ~DWC3_EP_TRANSFER_STARTED;
-			break;
-		default:
-			/* nothing */
-			break;
-		}
-	}
 
 	if (unlikely(susphy)) {
 		reg = dwc3_readl(dwc->regs, DWC3_GUSB2PHYCFG(0));
@@ -728,6 +794,8 @@ static int dwc3_gadget_ep_enable(struct usb_ep *ep,
 	ret = __dwc3_gadget_ep_enable(dep, desc, ep->comp_desc, false, false);
 	spin_unlock_irqrestore(&dwc->lock, flags);
 
+	dwc3_gadget_resize_tx_fifos(dwc);
+
 	return ret;
 }
 
@@ -1072,14 +1140,6 @@ static int __dwc3_gadget_kick_transfer(struct dwc3_ep *dep, u16 cmd_param)
 	return 0;
 }
 
-static int __dwc3_gadget_get_frame(struct dwc3 *dwc)
-{
-	u32		reg;
-
-	reg = dwc3_readl(dwc->regs, DWC3_DSTS);
-	return DWC3_DSTS_SOFFN(reg);
-}
-
 static void __dwc3_gadget_start_isoc(struct dwc3 *dwc,
 		struct dwc3_ep *dep, u32 cur_uf)
 {
@@ -1200,14 +1260,9 @@ static int __dwc3_gadget_ep_queue(struct dwc3_ep *dep, struct dwc3_request *req)
 		 * notion of current microframe.
 		 */
 		if (usb_endpoint_xfer_isoc(dep->endpoint.desc)) {
-			if (dep->flags & DWC3_EP_TRANSFER_STARTED) {
+			if (list_empty(&dep->started_list)) {
 				dwc3_stop_active_transfer(dwc, dep->number, true);
 				dep->flags = DWC3_EP_ENABLED;
-			} else {
-				u32 cur_uf;
-
-				cur_uf = __dwc3_gadget_get_frame(dwc);
-				__dwc3_gadget_start_isoc(dwc, dep, cur_uf);
 			}
 			return 0;
 		}
@@ -1478,8 +1533,10 @@ static const struct usb_ep_ops dwc3_gadget_ep_ops = {
 static int dwc3_gadget_get_frame(struct usb_gadget *g)
 {
 	struct dwc3		*dwc = gadget_to_dwc(g);
+	u32			reg;
 
-	return __dwc3_gadget_get_frame(dwc);
+	reg = dwc3_readl(dwc->regs, DWC3_DSTS);
+	return DWC3_DSTS_SOFFN(reg);
 }
 
 static int __dwc3_gadget_wakeup(struct dwc3 *dwc)
@@ -1788,6 +1845,7 @@ static int __dwc3_gadget_start(struct dwc3 *dwc)
 
 	/* begin to receive SETUP packets */
 	dwc->ep0state = EP0_SETUP_PHASE;
+	dwc->link_state = DWC3_LINK_STATE_SS_DIS;
 	dwc3_ep0_out_start(dwc);
 
 	dwc3_gadget_enable_irq(dwc);
@@ -1860,12 +1918,19 @@ static int dwc3_gadget_stop(struct usb_gadget *g)
 	unsigned long		flags;
 
 	spin_lock_irqsave(&dwc->lock, flags);
+	if (!dwc->gadget_driver) {
+		spin_unlock_irqrestore(&dwc->lock, flags);
+		dev_warn(dwc->dev, "%s is already stopped\n",
+			 dwc->gadget.name);
+		goto out;
+	}
 	__dwc3_gadget_stop(dwc);
 	dwc->gadget_driver	= NULL;
 	spin_unlock_irqrestore(&dwc->lock, flags);
 
 	free_irq(dwc->irq_gadget, dwc->ev_buf);
 
+out:
 	return 0;
 }
 
@@ -2009,16 +2074,8 @@ static int __dwc3_cleanup_done_trbs(struct dwc3 *dwc, struct dwc3_ep *dep,
 	trace_dwc3_complete_trb(dep, trb);
 
 	if ((trb->ctrl & DWC3_TRB_CTRL_HWO) && status != -ESHUTDOWN)
-		/*
-		 * We continue despite the error. There is not much we
-		 * can do. If we don't clean it up we loop forever. If
-		 * we skip the TRB then it gets overwritten after a
-		 * while since we use them in a ring buffer. A BUG()
-		 * would help. Lets hope that if this occurs, someone
-		 * fixes the root cause instead of looking away :)
-		 */
-		dev_err(dwc->dev, "%s's TRB (%pK) still owned by HW\n",
-				dep->name, trb);
+		return 1;
+
 	count = trb->size & DWC3_TRB_SIZE_MASK;
 
 	if (dep->direction) {

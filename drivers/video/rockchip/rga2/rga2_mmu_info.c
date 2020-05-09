@@ -426,7 +426,11 @@ static int rga2_MapUserMemory(struct page **pages, uint32_t *pageTable,
 	status = 0;
 	Address = 0;
 	down_read(&current->mm->mmap_sem);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 168) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 5, 0)
+	result = get_user_pages(current, current->mm, Memory << PAGE_SHIFT,
+				pageCount, writeFlag ? FOLL_WRITE : 0,
+				pages, NULL);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
 	result = get_user_pages(current, current->mm, Memory << PAGE_SHIFT,
 				pageCount, writeFlag, 0, pages, NULL);
 #else
@@ -477,7 +481,7 @@ static int rga2_MapUserMemory(struct page **pages, uint32_t *pageTable,
 		pte = pte_offset_map_lock(current->mm, pmd,
 					  (Memory + i) << PAGE_SHIFT,
 					  &ptl);
-		if (!pte) {
+		if (pte_none(*pte)) {
 			pr_err("RGA2 failed to get pte\n");
 			pte_unmap_unlock(pte, ptl);
 			status = RGA2_OUT_OF_RESOURCES;
@@ -486,9 +490,9 @@ static int rga2_MapUserMemory(struct page **pages, uint32_t *pageTable,
 		pfn = pte_pfn(*pte);
 		Address = ((pfn << PAGE_SHIFT) | (((unsigned long)((Memory + i)
 			   << PAGE_SHIFT)) & ~PAGE_MASK));
-		pte_unmap_unlock(pte, ptl);
 		pageTable[i] = (uint32_t)Address;
 		rga_dma_flush_page(pfn_to_page(pfn));
+		pte_unmap_unlock(pte, ptl);
 	}
 	up_read(&current->mm->mmap_sem);
 	return status;

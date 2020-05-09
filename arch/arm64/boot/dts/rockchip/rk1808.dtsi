@@ -1383,6 +1383,9 @@
 		rockchip,evb-irdrop = <12500>;
 		nvmem-cells = <&logic_leakage>;
 		nvmem-cell-names = "leakage";
+		rockchip,temp-hysteresis = <5000>;
+		rockchip,low-temp = <0>;
+		rockchip,low-temp-min-volt = <800000>;
 
 		opp-192000000 {
 			opp-hz = /bits/ 64 <192000000>;
@@ -1434,18 +1437,14 @@
 
 	cif: cif@ffae0000 {
 		compatible = "rockchip,rk1808-cif";
-		reg = <0x0 0xffae0000 0x0 0x200>, <0x0 0xffb10000 0x0 0x100>;
-		reg-names = "cif_regs", "csihost_regs";
-		interrupts = <GIC_SPI 56 IRQ_TYPE_LEVEL_HIGH>,
-			     <GIC_SPI 105 IRQ_TYPE_LEVEL_HIGH>,
-			     <GIC_SPI 106 IRQ_TYPE_LEVEL_HIGH>;
-		interrupt-names = "cif-intr", "csi-intr1", "csi-intr2";
+		reg = <0x0 0xffae0000 0x0 0x200>;
+		reg-names = "cif_regs";
+		interrupts = <GIC_SPI 56 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "cif-intr";
 		clocks = <&cru ACLK_CIF>, <&cru DCLK_CIF>,
-			 <&cru HCLK_CIF>, <&cru SCLK_CIF_OUT>,
-			 <&cru PCLK_CSI2HOST>;
+			 <&cru HCLK_CIF>, <&cru SCLK_CIF_OUT>;
 		clock-names = "aclk_cif", "dclk_cif",
-			"hclk_cif", "sclk_cif_out",
-			"pclk_csi2host";
+			"hclk_cif", "sclk_cif_out";
 		resets = <&cru SRST_CIF_A>, <&cru SRST_CIF_H>,
 			 <&cru SRST_CIF_I>, <&cru SRST_CIF_D>,
 			 <&cru SRST_CIF_PCLKIN>;
@@ -1506,6 +1505,18 @@
 		clock-names = "aclk", "hclk";
 		power-domains = <&power RK1808_PD_VIO>;
 		#iommu-cells = <0>;
+		status = "disabled";
+	};
+
+	mipi_csi2: mipi-csi2@ffb10000 {
+		compatible = "rockchip,rk1808-mipi-csi2";
+		reg = <0x0 0xffb10000 0x0 0x100>;
+		reg-names = "csihost_regs";
+		interrupts = <GIC_SPI 106 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 105 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "csi-intr1", "csi-intr2";
+		clocks = <&cru PCLK_CSI2HOST>;
+		clock-names = "pclk_csi2host";
 		status = "disabled";
 	};
 
@@ -1709,7 +1720,7 @@
 			   0      792   50000
 		>;
 
-		rockchip,max-volt = <950000>;
+		rockchip,max-volt = <880000>;
 		rockchip,evb-irdrop = <37500>;
 		nvmem-cells = <&npu_leakage>;
 		nvmem-cell-names = "leakage";
@@ -1723,26 +1734,26 @@
 
 		opp-200000000 {
 			opp-hz = /bits/ 64 <200000000>;
-			opp-microvolt = <750000 750000 950000>;
+			opp-microvolt = <750000 750000 880000>;
 		};
 		opp-297000000 {
 			opp-hz = /bits/ 64 <297000000>;
-			opp-microvolt = <750000 750000 950000>;
+			opp-microvolt = <750000 750000 880000>;
 		};
 		opp-400000000 {
 			opp-hz = /bits/ 64 <400000000>;
-			opp-microvolt = <750000 750000 950000>;
+			opp-microvolt = <750000 750000 880000>;
 		};
 		opp-594000000 {
 			opp-hz = /bits/ 64 <594000000>;
-			opp-microvolt = <750000 750000 950000>;
+			opp-microvolt = <750000 750000 880000>;
 		};
 		opp-792000000 {
 			opp-hz = /bits/ 64 <792000000>;
-			opp-microvolt = <825000 825000 950000>;
-			opp-microvolt-L0 = <825000 825000 950000>;
-			opp-microvolt-L1 = <800000 800000 950000>;
-			opp-microvolt-L2 = <775000 775000 950000>;
+			opp-microvolt = <825000 825000 880000>;
+			opp-microvolt-L0 = <825000 825000 880000>;
+			opp-microvolt-L1 = <800000 800000 880000>;
+			opp-microvolt-L2 = <775000 775000 880000>;
 		};
 	};
 

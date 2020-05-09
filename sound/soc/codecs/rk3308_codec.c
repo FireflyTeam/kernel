@@ -111,6 +111,7 @@ enum {
 enum {
 	ADC_TYPE_NORMAL = 0,
 	ADC_TYPE_LOOPBACK,
+	ADC_TYPE_DBG,
 	ADC_TYPE_ALL,
 };
 
@@ -171,6 +172,7 @@ struct rk3308_codec_priv {
 	u32 used_adc_grps;
 	/* The ADC group which is used for loop back */
 	u32 loopback_grp;
+	u32 cur_dbg_grp;
 	u32 en_always_grps[ADC_LR_GROUP_MAX];
 	u32 en_always_grps_num;
 	u32 skip_grps[ADC_LR_GROUP_MAX];
@@ -211,10 +213,13 @@ struct rk3308_codec_priv {
 	unsigned int hpout_l_dgain;
 	unsigned int hpout_r_dgain;
 
+	bool adc_grps_endisable[ADC_LR_GROUP_MAX];
+	bool dac_endisable;
 	bool enable_all_adcs;
 	bool enable_micbias;
 	bool micbias1;
 	bool micbias2;
+	bool hp_jack_reversed;
 	bool hp_plugged;
 	bool loopback_dacs_enabled;
 	bool no_deep_low_power;
@@ -1340,6 +1345,18 @@ static bool adc_for_each_grp(struct rk3308_codec_priv *rk3308,
 		dev_dbg(rk3308->plat_dev,
 			"ADC_TYPE_ALL, idx: %d, get grp: %d\n",
 			idx, *grp);
+	} else if (type == ADC_TYPE_DBG) {
+		if (idx >= ADC_LR_GROUP_MAX)
+			return false;
+
+		if (idx == (int)rk3308->cur_dbg_grp)
+			*grp = idx;
+		else
+			*grp = ADC_GRP_SKIP_MAGIC;
+
+		dev_dbg(rk3308->plat_dev,
+			"ADC_TYPE_DBG, idx: %d, get grp: %d\n",
+			idx, *grp);
 	} else {
 		if (idx >= 1)
 			return false;
@@ -2080,7 +2097,7 @@ static int rk3308_codec_dac_enable(struct rk3308_codec_priv *rk3308)
 			   RK3308_DAC_BUF_REF_R_EN);
 
 	/* Waiting the stable reference voltage */
-	udelay(50);
+	mdelay(1);
 
 	if (rk3308->dac_output == DAC_HPOUT ||
 	    rk3308->dac_output == DAC_LINEOUT_HPOUT) {
@@ -2115,7 +2132,7 @@ static int rk3308_codec_dac_enable(struct rk3308_codec_priv *rk3308)
 			   RK3308_DAC_R_HPMIX_EN);
 
 	/* Waiting the stable HPMIX */
-	udelay(50);
+	mdelay(1);
 
 	/* Step 06. Reset HPMIX and recover HPMIX gains */
 	regmap_update_bits(rk3308->regmap, RK3308_DAC_ANA_CON13,
@@ -2263,6 +2280,8 @@ static int rk3308_codec_dac_enable(struct rk3308_codec_priv *rk3308)
 		/* Just for HPOUT */
 		rk3308_codec_digital_fadein(rk3308);
 	}
+
+	rk3308->dac_endisable = true;
 
 	/* TODO: TRY TO TEST DRIVE STRENGTH */
 
@@ -2415,6 +2434,8 @@ static int rk3308_codec_dac_disable(struct rk3308_codec_priv *rk3308)
 	 * IF USING LINE-IN
 	 * rk3308_codec_adc_ana_disable(rk3308, type);
 	 */
+
+	rk3308->dac_endisable = false;
 
 	return 0;
 }
@@ -3225,6 +3246,13 @@ static int rk3308_codec_adc_ana_enable(struct rk3308_codec_priv *rk3308,
 		}
 	}
 
+	for (idx = 0; adc_for_each_grp(rk3308, type, idx, &grp); idx++) {
+		if (grp < 0 || grp > ADC_LR_GROUP_MAX - 1)
+			continue;
+
+		rk3308->adc_grps_endisable[grp] = true;
+	}
+
 	return 0;
 }
 
@@ -3351,6 +3379,13 @@ static int rk3308_codec_adc_ana_disable(struct rk3308_codec_priv *rk3308,
 				   RK3308_ADC_CH2_MIC_INIT);
 	}
 
+	for (idx = 0; adc_for_each_grp(rk3308, type, idx, &grp); idx++) {
+		if (grp < 0 || grp > ADC_LR_GROUP_MAX - 1)
+			continue;
+
+		rk3308->adc_grps_endisable[grp] = false;
+	}
+
 	return 0;
 }
 
@@ -3438,6 +3473,20 @@ static void rk3308_codec_dac_mclk_enable(struct rk3308_codec_priv *rk3308)
 			   RK3308_DAC_MCLK_MSK,
 			   RK3308_DAC_MCLK_EN);
 	udelay(20);
+}
+
+static int rk3308_codec_open_dbg_capture(struct rk3308_codec_priv *rk3308)
+{
+	rk3308_codec_adc_ana_enable(rk3308, ADC_TYPE_DBG);
+
+	return 0;
+}
+
+static int rk3308_codec_close_dbg_capture(struct rk3308_codec_priv *rk3308)
+{
+	rk3308_codec_adc_ana_disable(rk3308, ADC_TYPE_DBG);
+
+	return 0;
 }
 
 static int rk3308_codec_close_all_capture(struct rk3308_codec_priv *rk3308)
@@ -4119,13 +4168,26 @@ static void rk3308_codec_hpdetect_work(struct work_struct *work)
 		regmap_write(rk3308->detect_grf,
 			     DETECT_GRF_ACODEC_HPDET_STATUS_CLR, val);
 
-		switch (val) {
-		case 0x1:
-			dac_output = DAC_HPOUT;
-			report_type = SND_JACK_HEADPHONE;
-			break;
-		default:
-			break;
+		if (rk3308->hp_jack_reversed) {
+			switch (val) {
+			case 0x0:
+			case 0x2:
+				dac_output = DAC_HPOUT;
+				report_type = SND_JACK_HEADPHONE;
+				break;
+			default:
+				break;
+			}
+		} else {
+			switch (val) {
+			case 0x1:
+				dac_output = DAC_HPOUT;
+				report_type = SND_JACK_HEADPHONE;
+				break;
+			default:
+				/* Includes val == 2 or others. */
+				break;
+			}
 		}
 
 		rk3308_codec_dac_switch(rk3308, dac_output);
@@ -4141,18 +4203,35 @@ static void rk3308_codec_hpdetect_work(struct work_struct *work)
 
 	/* Check headphone unplugged via poll. */
 	regmap_read(rk3308->regmap, RK3308_DAC_DIG_CON14, &val);
-	if (!val) {
-		rk3308->hp_plugged = false;
 
-		need_report = 1;
-		need_irq = 1;
-	} else {
-		if (!rk3308->hp_plugged) {
+	if (rk3308->hp_jack_reversed) {
+		if (!val) {
 			rk3308->hp_plugged = true;
 			report_type = SND_JACK_HEADPHONE;
+
 			need_report = 1;
+			need_irq = 1;
+		} else {
+			if (rk3308->hp_plugged) {
+				rk3308->hp_plugged = false;
+				need_report = 1;
+			}
+			need_poll = 1;
 		}
-		need_poll = 1;
+	} else {
+		if (!val) {
+			rk3308->hp_plugged = false;
+
+			need_report = 1;
+			need_irq = 1;
+		} else {
+			if (!rk3308->hp_plugged) {
+				rk3308->hp_plugged = true;
+				report_type = SND_JACK_HEADPHONE;
+				need_report = 1;
+			}
+			need_poll = 1;
+		}
 	}
 
 	if (need_poll)
@@ -4220,14 +4299,25 @@ static irqreturn_t rk3308_codec_hpdet_isr(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-void rk3308_codec_set_jack_detect(struct snd_soc_codec *codec,
+void (*rk3308_codec_set_jack_detect_cb)(struct snd_soc_codec *codec,
+					struct snd_soc_jack *hpdet_jack);
+EXPORT_SYMBOL_GPL(rk3308_codec_set_jack_detect_cb);
+
+static void rk3308_codec_set_jack_detect(struct snd_soc_codec *codec,
 				  struct snd_soc_jack *hpdet_jack)
 {
 	struct rk3308_codec_priv *rk3308 = snd_soc_codec_get_drvdata(codec);
 
 	rk3308->hpdet_jack = hpdet_jack;
+
+	/* To detect jack once during startup */
+	disable_irq_nosync(rk3308->irq);
+	queue_delayed_work(system_power_efficient_wq,
+			   &rk3308->hpdet_work, msecs_to_jiffies(10));
+
+	dev_info(rk3308->plat_dev, "%s: Request detect hp jack once\n",
+		 __func__);
 }
-EXPORT_SYMBOL_GPL(rk3308_codec_set_jack_detect);
 
 static const struct regmap_config rk3308_codec_regmap_config = {
 	.reg_bits = 32,
@@ -4464,6 +4554,85 @@ static ssize_t adc_zerocross_store(struct device *dev,
 	return count;
 }
 
+static ssize_t adc_grps_endisable_show(struct device *dev,
+				    struct device_attribute *attr,
+				    char *buf)
+{
+	struct rk3308_codec_priv *rk3308 =
+		container_of(dev, struct rk3308_codec_priv, dev);
+	int count = 0, i;
+
+	count += sprintf(buf + count, "enabled adc grps:");
+	for (i = 0; i < ADC_LR_GROUP_MAX; i++)
+		count += sprintf(buf + count, "%d ",
+				 rk3308->adc_grps_endisable[i]);
+
+	count += sprintf(buf + count, "\n");
+	return count;
+}
+
+static ssize_t adc_grps_endisable_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct rk3308_codec_priv *rk3308 =
+		container_of(dev, struct rk3308_codec_priv, dev);
+	int grp, endisable, ret;
+
+	ret = sscanf(buf, "%d,%d", &grp, &endisable);
+	if (ret != 2) {
+		dev_err(rk3308->plat_dev, "%s sscanf failed: %d\n",
+			__func__, ret);
+		return -EFAULT;
+	}
+
+	rk3308->cur_dbg_grp = grp;
+
+	if (endisable)
+		rk3308_codec_open_dbg_capture(rk3308);
+	else
+		rk3308_codec_close_dbg_capture(rk3308);
+
+	dev_info(dev, "ADC grp %d endisable: %d\n", grp, endisable);
+
+	return count;
+}
+
+static ssize_t dac_endisable_show(struct device *dev,
+				    struct device_attribute *attr,
+				    char *buf)
+{
+	struct rk3308_codec_priv *rk3308 =
+		container_of(dev, struct rk3308_codec_priv, dev);
+
+	return sprintf(buf, "%d\n", rk3308->dac_endisable);
+}
+
+static ssize_t dac_endisable_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct rk3308_codec_priv *rk3308 =
+		container_of(dev, struct rk3308_codec_priv, dev);
+	unsigned long endisable;
+	int ret = kstrtoul(buf, 10, &endisable);
+
+	if (ret < 0) {
+		dev_err(dev, "Invalid endisable: %ld, ret: %d\n",
+			endisable, ret);
+		return -EINVAL;
+	}
+
+	if (endisable)
+		rk3308_codec_open_playback(rk3308);
+	else
+		rk3308_codec_close_playback(rk3308);
+
+	dev_info(dev, "DAC endisable: %ld\n", endisable);
+
+	return count;
+}
+
 static ssize_t dac_output_show(struct device *dev,
 			       struct device_attribute *attr,
 			       char *buf)
@@ -4545,9 +4714,11 @@ static ssize_t enable_all_adcs_store(struct device *dev,
 
 static const struct device_attribute acodec_attrs[] = {
 	__ATTR_RW(adc_grps),
+	__ATTR_RW(adc_grps_endisable),
 	__ATTR_RW(adc_grps_route),
 	__ATTR_RW(adc_grp0_in),
 	__ATTR_RW(adc_zerocross),
+	__ATTR_RW(dac_endisable),
 	__ATTR_RW(dac_output),
 	__ATTR_RW(enable_all_adcs),
 	__ATTR_RW(pm_state),
@@ -4819,6 +4990,9 @@ static int rk3308_platform_probe(struct platform_device *pdev)
 	rk3308->enable_all_adcs =
 		of_property_read_bool(np, "rockchip,enable-all-adcs");
 
+	rk3308->hp_jack_reversed =
+		of_property_read_bool(np, "rockchip,hp-jack-reversed");
+
 	rk3308->no_deep_low_power =
 		of_property_read_bool(np, "rockchip,no-deep-low-power");
 
@@ -4925,6 +5099,8 @@ static int rk3308_platform_probe(struct platform_device *pdev)
 				     (HPDET_BOTH_NEG_POS << 16) |
 				      HPDET_BOTH_NEG_POS);
 		}
+
+		rk3308_codec_set_jack_detect_cb = rk3308_codec_set_jack_detect;
 	}
 
 	if (rk3308->codec_ver == ACODEC_VERSION_A)

@@ -20,6 +20,8 @@ Required properties:
 - rockchip,cru: cru phandle.
 - rockchip,grf: the phandle of the syscon node for GRF register.
 - rockchip,mclk-calibrate: enable mclk source calibration.
+- rockchip,io-multiplex: This is a boolean property. If present, the driver will
+  handle the IO multiplex during playback and capture.
 - rockchip,clk-trcm: tx and rx lrck/bclk common use.
    - 0: both tx_lrck/bclk and rx_lrck/bclk are used
    - 1: only tx_lrck/bclk is used
@@ -28,6 +30,8 @@ Required properties:
   register pcm dmaengine, only just register dai. if the dai is part of multi-dais,
   the property should be present. Please refer to rockchip,multidais.txt about
   multi-dais usage.
+- rockchip,playback-only: Specify that the controller only has playback capability.
+- rockchip,capture-only: Specify that the controller only has capture capability.
 
 Optional properties:
 - rockchip,i2s-rx-route: This is a variable length array, that shows the mapping

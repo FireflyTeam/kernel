@@ -1018,7 +1018,7 @@ static ssize_t store_io_is_busy(struct cpufreq_interactive_tunables *tunables,
  */
 #define show_gov_pol_sys(file_name)					\
 static ssize_t show_##file_name##_gov_sys				\
-(struct kobject *kobj, struct attribute *attr, char *buf)		\
+(struct kobject *kobj, struct kobj_attribute *attr, char *buf)		\
 {									\
 	return show_##file_name(common_tunables, buf);			\
 }									\
@@ -1031,7 +1031,7 @@ static ssize_t show_##file_name##_gov_pol				\
 
 #define store_gov_pol_sys(file_name)					\
 static ssize_t store_##file_name##_gov_sys				\
-(struct kobject *kobj, struct attribute *attr, const char *buf,		\
+(struct kobject *kobj, struct kobj_attribute *attr, const char *buf,	\
 	size_t count)							\
 {									\
 	return store_##file_name(common_tunables, buf, count);		\
@@ -1060,7 +1060,7 @@ show_store_gov_pol_sys(boostpulse_duration);
 show_store_gov_pol_sys(io_is_busy);
 
 #define gov_sys_attr_rw(_name)						\
-static struct global_attr _name##_gov_sys =				\
+static struct kobj_attribute _name##_gov_sys =				\
 __ATTR(_name, 0644, show_##_name##_gov_sys, store_##_name##_gov_sys)
 
 #define gov_pol_attr_rw(_name)						\
@@ -1082,7 +1082,7 @@ gov_sys_pol_attr_rw(boost);
 gov_sys_pol_attr_rw(boostpulse_duration);
 gov_sys_pol_attr_rw(io_is_busy);
 
-static struct global_attr boostpulse_gov_sys =
+static struct kobj_attribute boostpulse_gov_sys =
 	__ATTR(boostpulse, 0200, NULL, store_boostpulse_gov_sys);
 
 static struct freq_attr boostpulse_gov_pol =
@@ -1174,20 +1174,34 @@ static void cpufreq_interactive_input_event(struct input_handle *handle,
 	now = ktime_to_us(ktime_get());
 	for_each_online_cpu(i) {
 		pcpu = &per_cpu(cpuinfo, i);
-		if (!pcpu->policy)
+		if (!down_read_trylock(&pcpu->enable_sem))
 			continue;
+
+		if (!pcpu->governor_enabled) {
+			up_read(&pcpu->enable_sem);
+			continue;
+		}
+
+		if (!pcpu->policy) {
+			up_read(&pcpu->enable_sem);
+			continue;
+		}
 
 		if (have_governor_per_policy())
 			tunables = pcpu->policy->governor_data;
 		else
 			tunables = common_tunables;
-		if (!tunables)
+		if (!tunables) {
+			up_read(&pcpu->enable_sem);
 			continue;
+		}
 
 		endtime = now + tunables->touchboostpulse_duration_val;
 		if (endtime < (tunables->touchboostpulse_endtime +
-			       10 * USEC_PER_MSEC))
+			       10 * USEC_PER_MSEC)) {
+			up_read(&pcpu->enable_sem);
 			continue;
+		}
 		tunables->touchboostpulse_endtime = endtime;
 
 		spin_lock_irqsave(&pcpu->target_freq_lock, flags[1]);
@@ -1203,6 +1217,8 @@ static void cpufreq_interactive_input_event(struct input_handle *handle,
 		pcpu->loc_floor_val_time = ktime_to_us(ktime_get());
 
 		spin_unlock_irqrestore(&pcpu->target_freq_lock, flags[1]);
+
+		up_read(&pcpu->enable_sem);
 	}
 
 	spin_unlock_irqrestore(&speedchange_cpumask_lock, flags[0]);

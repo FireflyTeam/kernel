@@ -1707,9 +1707,6 @@ static int azx_first_init(struct azx *chip)
 			chip->msi = 0;
 	}
 
-	if (azx_acquire_irq(chip, 0) < 0)
-		return -EBUSY;
-
 	pci_set_master(pci);
 	synchronize_irq(bus->irq);
 
@@ -1819,6 +1816,9 @@ static int azx_first_init(struct azx *chip)
 		dev_err(card->dev, "no codecs found!\n");
 		return -ENODEV;
 	}
+
+	if (azx_acquire_irq(chip, 0) < 0)
+		return -EBUSY;
 
 	strcpy(card->driver, "HDA-Intel");
 	strlcpy(card->shortname, driver_short_names[chip->driver_type],
@@ -2100,6 +2100,7 @@ static int azx_probe_continue(struct azx *chip)
 	int val;
 	int err;
 
+	to_hda_bus(bus)->bus_probing = 1;
 	hda->probe_continued = 1;
 
 	/* Request display power well for the HDA controller or codec. For
@@ -2200,6 +2201,7 @@ i915_power_fail:
 	if (err < 0)
 		hda->init_failed = 1;
 	complete_all(&hda->probe_wait);
+	to_hda_bus(bus)->bus_probing = 0;
 	return err;
 }
 

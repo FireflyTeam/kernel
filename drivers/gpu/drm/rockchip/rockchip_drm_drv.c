@@ -154,7 +154,7 @@ struct drm_connector *find_connector_by_bridge(struct drm_device *drm_dev,
 		dev_err(drm_dev->dev, "can't found port point!\n");
 		goto err_put_encoder;
 	}
-	for_each_child_of_node(port, endpoint) {
+	for_each_available_child_of_node(port, endpoint) {
 		np_connector = of_graph_get_remote_port_parent(endpoint);
 		if (!np_connector) {
 			dev_err(drm_dev->dev,
@@ -209,7 +209,9 @@ void rockchip_free_loader_memory(struct drm_device *drm)
 	if (private->domain) {
 		iommu_unmap(private->domain, logo->dma_addr,
 			    logo->iommu_map_size);
+		mutex_lock(&private->mm_lock);
 		drm_mm_remove_node(&logo->mm);
+		mutex_unlock(&private->mm_lock);
 	} else {
 		dma_unmap_sg(drm->dev, logo->sgt->sgl,
 			     logo->sgt->nents, DMA_TO_DEVICE);
@@ -269,9 +271,11 @@ static int init_loader_memory(struct drm_device *drm_dev)
 
 	if (private->domain) {
 		memset(&logo->mm, 0, sizeof(logo->mm));
+		mutex_lock(&private->mm_lock);
 		ret = drm_mm_insert_node_generic(&private->mm, &logo->mm,
 						 size, PAGE_SIZE,
 						 0, 0, 0);
+		mutex_unlock(&private->mm_lock);
 		if (ret < 0) {
 			DRM_ERROR("out of I/O virtual memory: %d\n", ret);
 			goto err_free_pages;
@@ -727,10 +731,7 @@ static void show_loader_logo(struct drm_device *drm_dev)
 
 	state->acquire_ctx = mode_config->acquire_ctx;
 
-	for_each_child_of_node(root, route) {
-		if (!of_device_is_available(route))
-			continue;
-
+	for_each_available_child_of_node(root, route) {
 		set = of_parse_display_resource(drm_dev, route);
 		if (!set)
 			continue;
@@ -1836,7 +1837,7 @@ static void rockchip_add_endpoints(struct device *dev,
 {
 	struct device_node *ep, *remote;
 
-	for_each_child_of_node(port, ep) {
+	for_each_available_child_of_node(port, ep) {
 		remote = of_graph_get_remote_port_parent(ep);
 		if (!remote || !of_device_is_available(remote)) {
 			of_node_put(remote);

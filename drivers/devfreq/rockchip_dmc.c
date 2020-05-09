@@ -1353,7 +1353,7 @@ static int rockchip_dmcfreq_target(struct device *dev, unsigned long *freq,
 	 * Go to specified cpufreq and block other cpufreq changes since
 	 * set_rate needs to complete during vblank.
 	 */
-	cpu_cur = smp_processor_id();
+	cpu_cur = raw_smp_processor_id();
 	policy = cpufreq_cpu_get(cpu_cur);
 	if (!policy) {
 		dev_err(dev, "cpu%d policy NULL\n", cpu_cur);
@@ -1453,6 +1453,9 @@ static int rockchip_dmcfreq_get_dev_status(struct device *dev,
 	struct rockchip_dmcfreq *dmcfreq = dev_get_drvdata(dev);
 	struct devfreq_event_data edata;
 	int i, j, ret = 0;
+
+	if (!dmcfreq->auto_freq_en)
+		return -EINVAL;
 
 	if (dmcfreq->dfi_id >= 0) {
 		ret = devfreq_event_get_event(dmcfreq->edev[dmcfreq->dfi_id],
@@ -3001,6 +3004,8 @@ static int devfreq_dmc_ondemand_func(struct devfreq *df,
 			target_freq = dmcfreq->normal_rate;
 		if (target_freq)
 			*freq = target_freq;
+		if (dmcfreq->auto_freq_en && !devfreq_update_stats(df))
+			return 0;
 		goto reset_last_status;
 	}
 

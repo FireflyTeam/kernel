@@ -3,6 +3,9 @@
  * gc2385 driver
  *
  * Copyright (C) 2017 Fuzhou Rockchip Electronics Co., Ltd.
+ *
+ * V0.0X01.0X01 add poweron function.
+ * V0.0X01.0X02 fix mclk issue when probe multiple camera.
  */
 
 #include <linux/clk.h>
@@ -22,7 +25,7 @@
 #include <media/v4l2-subdev.h>
 #include <linux/pinctrl/consumer.h>
 
-#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x0)
+#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x02)
 
 #ifndef V4L2_CID_DIGITAL_GAIN
 #define V4L2_CID_DIGITAL_GAIN		V4L2_CID_GAIN
@@ -640,13 +643,16 @@ static int __gc2385_power_on(struct gc2385 *gc2385)
 		if (ret < 0)
 			dev_err(dev, "could not set pins\n");
 	}
-
+	ret = clk_set_rate(gc2385->xvclk, GC2385_XVCLK_FREQ);
+	if (ret < 0)
+		dev_warn(dev, "Failed to set xvclk rate (24MHz)\n");
+	if (clk_get_rate(gc2385->xvclk) != GC2385_XVCLK_FREQ)
+		dev_warn(dev, "xvclk mismatched, modes are based on 24MHz\n");
 	ret = clk_prepare_enable(gc2385->xvclk);
 	if (ret < 0) {
 		dev_err(dev, "Failed to enable xvclk\n");
 		return ret;
 	}
-
 	if (!IS_ERR(gc2385->reset_gpio))
 		gpiod_set_value_cansleep(gc2385->reset_gpio, 1);
 
@@ -662,7 +668,7 @@ static int __gc2385_power_on(struct gc2385 *gc2385)
 
 	usleep_range(500, 1000);
 	if (!IS_ERR(gc2385->pwdn_gpio))
-		gpiod_set_value_cansleep(gc2385->pwdn_gpio, 0);
+		gpiod_set_value_cansleep(gc2385->pwdn_gpio, 1);
 
 	/* 8192 cycles prior to first SCCB transaction */
 	delay_us = gc2385_cal_delay(8192);
@@ -681,7 +687,7 @@ static void __gc2385_power_off(struct gc2385 *gc2385)
 	int ret = 0;
 
 	if (!IS_ERR(gc2385->pwdn_gpio))
-		gpiod_set_value_cansleep(gc2385->pwdn_gpio, 1);
+		gpiod_set_value_cansleep(gc2385->pwdn_gpio, 0);
 	clk_disable_unprepare(gc2385->xvclk);
 	if (!IS_ERR(gc2385->reset_gpio))
 		gpiod_set_value_cansleep(gc2385->reset_gpio, 1);
@@ -1093,13 +1099,6 @@ static int gc2385_probe(struct i2c_client *client,
 		dev_err(dev, "Failed to get xvclk\n");
 		return -EINVAL;
 	}
-	ret = clk_set_rate(gc2385->xvclk, GC2385_XVCLK_FREQ);
-	if (ret < 0) {
-		dev_err(dev, "Failed to set xvclk rate (24MHz)\n");
-		return ret;
-	}
-	if (clk_get_rate(gc2385->xvclk) != GC2385_XVCLK_FREQ)
-		dev_warn(dev, "xvclk mismatched, modes are based on 24MHz\n");
 
 	gc2385->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_LOW);
 	if (IS_ERR(gc2385->reset_gpio))

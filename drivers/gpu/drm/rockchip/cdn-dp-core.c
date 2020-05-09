@@ -454,6 +454,9 @@ static int cdn_dp_connector_mode_valid(struct drm_connector *connector,
 		break;
 	}
 
+	if (!IS_ALIGNED(mode->hdisplay * bpc * 3, 32))
+		return MODE_H_ILLEGAL;
+
 	requested = mode->clock * bpc * 3 / 1000;
 
 	source_max = dp->lanes;
@@ -1236,7 +1239,8 @@ static int cdn_dp_request_firmware(struct cdn_dp_device *dp)
 	mutex_unlock(&dp->lock);
 
 	while (time_before(jiffies, timeout)) {
-		ret = request_firmware(&dp->fw, CDN_DP_FIRMWARE, dp->dev);
+		ret = request_firmware_direct(&dp->fw, CDN_DP_FIRMWARE,
+					      dp->dev);
 		if (ret == -ENOENT) {
 			msleep(sleep);
 			sleep *= 2;
