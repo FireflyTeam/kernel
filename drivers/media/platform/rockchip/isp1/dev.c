@@ -1112,7 +1112,7 @@ static int rkisp1_plat_probe(struct platform_device *pdev)
 					   match_data->irqs[0].name);
 	if (res) {
 		/* there are irq names in dts */
-		for (i = 0; i < 2; i++) {
+		for (i = 0; i < match_data->num_irqs; i++) {
 			irq = platform_get_irq_byname(pdev,
 						      match_data->irqs[i].name);
 			if (irq < 0) {
