@@ -46,6 +46,17 @@
 / {
 	model = "RK3399pro-firefly-aiojd4 board";
 	compatible = "rockchip,rk3399pro-firefly-aiojd4", "rockchip,rk3399pro";
+
+       vcc5v0_typec: vcc5v0_typec {
+                compatible = "regulator-fixed";
+                enable-active-high;
+                gpio = <&gpio4 RK_PC5 GPIO_ACTIVE_HIGH>;
+                pinctrl-names = "default";
+                pinctrl-0 = <&host_typec>;
+                regulator-name = "vcc5v0_typec";
+                regulator-always-on;
+        };
+
 };
 /*
 &hdmi_dp_sound {
@@ -96,18 +107,28 @@
 };
 
 &u2phy0 {
-    status = "okay";
-    /delete-property/ extcon;
+	status = "okay";
+	/delete-property/ extcon;
 
-    u2phy0_otg: otg-port {
-        rockchip,vbus-always-on;
-        vbus-5v-gpios = <&gpio4 RK_PC5 GPIO_ACTIVE_HIGH>;
-        status = "okay";
-    };
+	u2phy0_otg: otg-port {
+		    status = "okay";
+	    };  
+
+	u2phy0_host: host-port {
+		     phy-supply = <&vcc5v0_host>;
+		     status = "okay";
+	     };
 };
 
 &usbdrd3_0 {
     status = "okay";
     /delete-property/ extcon;
 };
+
+&usbdrd_dwc3_0 {
+        status = "okay";
+       dr_mode = "host";
+ };
+
+
 

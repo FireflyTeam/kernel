@@ -17,6 +17,15 @@
         	pinctrl-0 = <&lcd_panel_lcd_en>;
 	};
 
+	vcc5v0_typec: vcc5v0_typec {
+                compatible = "regulator-fixed";
+                enable-active-high;
+                gpio = <&gpio4 RK_PC5 GPIO_ACTIVE_HIGH>;
+                pinctrl-names = "default";
+                pinctrl-0 = <&host_typec>;
+                regulator-name = "vcc5v0_typec";
+                regulator-always-on;
+        };
 };
 
 &backlight {
@@ -176,7 +185,7 @@
 };
 
 &dsi_in_vopb {
-        status = "okay";
+        status = "disabled";
 };
 
 &hdmi {
@@ -184,16 +193,11 @@
 };
 
 &hdmi_in_vopb {
-        status = "disabled";
+        status = "okay";
 };
 
-/*
-&hdmi_dp_sound {
-	status = "okay";
-};
-*/
 &hdmi_in_vopl {
-	status = "okay";
+	status = "disabled";
 };
 
 &dp_in_vopb {
@@ -239,3 +243,41 @@
 };
 
 
+&cdn_dp {
+	status = "disabled";
+	extcon = <&fusb0>;
+	phys = <&tcphy0_dp>;
+};
+
+&fusb0 {
+    status = "disabled";
+};
+
+&tcphy0 {
+    /delete-property/ extcon;
+    status = "okay";
+};
+
+&u2phy0 {
+	status = "okay";
+	/delete-property/ extcon;
+
+	u2phy0_otg: otg-port {
+		    status = "okay";
+	    };  
+
+	u2phy0_host: host-port {
+		     phy-supply = <&vcc5v0_host>;
+		     status = "okay";
+	     };
+};
+
+&usbdrd3_0 {
+    status = "okay";
+    /delete-property/ extcon;
+};
+
+&usbdrd_dwc3_0 {
+        status = "okay";
+       dr_mode = "host";
+ };
