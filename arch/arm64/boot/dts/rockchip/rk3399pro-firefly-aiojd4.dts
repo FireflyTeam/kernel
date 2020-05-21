@@ -47,17 +47,140 @@
 	model = "RK3399pro-firefly-aiojd4 board";
 	compatible = "rockchip,rk3399pro-firefly-aiojd4", "rockchip,rk3399pro";
 
-       vcc5v0_typec: vcc5v0_typec {
-                compatible = "regulator-fixed";
-                enable-active-high;
-                gpio = <&gpio4 RK_PC5 GPIO_ACTIVE_HIGH>;
-                pinctrl-names = "default";
-                pinctrl-0 = <&host_typec>;
-                regulator-name = "vcc5v0_typec";
-                regulator-always-on;
-        };
+    vcc5v0_typec: vcc5v0_typec {
+            compatible = "regulator-fixed";
+            enable-active-high;
+            gpio = <&gpio4 RK_PC5 GPIO_ACTIVE_HIGH>;
+            pinctrl-names = "default";
+            pinctrl-0 = <&host_typec>;
+            regulator-name = "vcc5v0_typec";
+            regulator-always-on;
+    };
+
+    ///delete-node/ ov13850@36;
+    ///delete-node/ ov13850@46;
+
+
 
 };
+
+&ov13850 {
+    compatible = "ovti,ov13850";
+    status = "okay";
+    reg = <0x36>;
+    clocks = <&cru SCLK_CIF_OUT>;
+    clock-names = "xvclk";
+
+    /* conflict with csi-ctl-gpios */
+    reset-gpios = <&gpio1 20 GPIO_ACTIVE_HIGH>;  /*GPIO1_C4 MIP_RST*/
+    pwdn-gpios = <&gpio2 1 GPIO_ACTIVE_HIGH>;   /*GPIO2_A1/MIPI_PDN1_H VSYNC*/
+    pinctrl-names = "rockchip,camera_default", "rockchip,camera_sleep";
+    //pinctrl-0 = <&cif_clkout>;
+    pinctrl-0 = <&pwdn_cam0 &mipi_rst>;
+    // pinctrl-1 = <&cam0_default_pins>;
+    // pinctrl-2 = <&cam0_sleep_pins>;
+
+    rockchip,camera-module-index = <0>;
+    rockchip,camera-module-facing = "back";
+    rockchip,camera-module-name = "CMK-CT0116";
+    rockchip,camera-module-lens-name = "Largan-50013A1";
+
+    avdd-supply = <&vcc_mipi>; /* GPIO0_B5 CIF_PWR  AGND*/                                                                                                                                              
+    dovdd-supply = <&vcc_mipi>; /* GPIO0_B5 CIF_PWR  AGND */
+    dvdd-supply = <&dvdd_1v2>; /* GPIO0_B1 DVP_PWR DVDD_1V2 */
+
+    port {
+        ucam_out0: endpoint {
+            remote-endpoint = <&mipi_in_ucam0>;
+            data-lanes = <1 2>;
+        };
+    };
+};
+
+
+&ov13850_1 {
+    compatible = "ovti,ov13850";
+    status = "okay";
+    reg = <0x46>;
+    clocks = <&cru SCLK_CIF_OUT>;
+    clock-names = "xvclk";
+
+    /* conflict with csi-ctl-gpios */
+    reset-gpios = <&gpio1 20 GPIO_ACTIVE_HIGH>;  /*GPIO1_C4 MIP_RST*/
+    pwdn-gpios = <&gpio2 0 GPIO_ACTIVE_HIGH>;   /*GPIO2_A0/MIPI_PDN1_H VSYNC*/
+    pinctrl-names = "rockchip,camera_default", "rockchip,camera_sleep";
+    pinctrl-0 = <&pwdn_cam1>;
+    //pinctrl-0 = <&cif_clkout>;
+    // pinctrl-1 = <&cam0_default_pins>;
+    // pinctrl-2 = <&cam0_sleep_pins>;
+    rockchip,camera-module-index = <1>;
+    rockchip,camera-module-facing = "back";
+    rockchip,camera-module-name = "CMK-CT0116";
+    rockchip,camera-module-lens-name = "Largan-50013A1";
+
+    avdd-supply = <&vcc_mipi>; /* GPIO0_B5 CIF_PWR  AGND*/                                                                                                                                              
+    dovdd-supply = <&vcc_mipi>; /* GPIO0_B5 CIF_PWR  AGND */
+    dvdd-supply = <&dvdd_1v2>; /* GPIO0_B1 DVP_PWR DVDD_1V2 */
+
+
+    port {
+        ucam_out1: endpoint {
+            remote-endpoint = <&mipi_in_ucam1>;
+            data-lanes = <1 2>;
+        };
+    };
+};
+
+
+&pwdn_cam1 {
+    rockchip,pins =
+        <2 0 RK_FUNC_GPIO &pcfg_pull_none>;
+};
+
+
+&vcc_mipi {
+    compatible = "regulator-fixed";
+    enable-active-high;
+    gpio = <&gpio0 13 GPIO_ACTIVE_HIGH>;
+    pinctrl-names = "default";
+    pinctrl-0 = <&cif_pwr>;
+    regulator-name = "vcc_mipi";
+    status = "okay";
+};
+
+
+&dvdd_1v2 {
+    compatible = "regulator-fixed";
+    enable-active-high;
+    gpio = <&gpio0 9 GPIO_ACTIVE_HIGH>;
+    pinctrl-names = "default";
+    pinctrl-0 = <&dvp_pwr>;
+    regulator-name = "dvdd_1v2";
+    status = "okay";
+};
+
+&cif_pwr {
+    rockchip,pins = <0 13 RK_FUNC_GPIO &pcfg_pull_down>;
+};
+
+&dvp_pwr {
+    rockchip,pins = <0 9 RK_FUNC_GPIO &pcfg_pull_down>;
+};
+
+
+
+
+&pwdn_cam0 {
+    rockchip,pins =
+        <2 1 RK_FUNC_GPIO &pcfg_pull_none>;
+};
+
+&mipi_rst {
+    rockchip,pins =
+        <0 8 RK_FUNC_GPIO &pcfg_pull_none>;
+};
+
+
 /*
 &hdmi_dp_sound {
 	status = "okay";
