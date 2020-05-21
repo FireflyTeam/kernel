@@ -77,6 +77,7 @@
     pinctrl-names = "rockchip,camera_default", "rockchip,camera_sleep";
     //pinctrl-0 = <&cif_clkout>;
     pinctrl-0 = <&pwdn_cam0 &mipi_rst>;
+    /delete-property/ pinctrl-1;
     // pinctrl-1 = <&cam0_default_pins>;
     // pinctrl-2 = <&cam0_sleep_pins>;
 
