@@ -605,5 +605,11 @@ config TILE_SROM
 
 source "drivers/char/xillybus/Kconfig"
 
+config HWVERSION_FIREFLY
+	bool "Firefly hardware version"
+	default y
+	help
+	  Show firefly hardware version information
+
 endmenu
 

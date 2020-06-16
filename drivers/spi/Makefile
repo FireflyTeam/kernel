@@ -95,8 +95,8 @@ obj-$(CONFIG_SPI_XTENSA_XTFPGA)		+= spi-xtensa-xtfpga.o
 obj-$(CONFIG_SPI_ZYNQMP_GQSPI)		+= spi-zynqmp-gqspi.o
 obj-$(CONFIG_SPI_WK2XXX)		+= spi-wk2xxx.o
 ifeq ($(CONFIG_ARM64),y)
-spi-wk2xxx-objs                        := spi-wk2xxx_64bit
+spi-wk2xxx-objs                        := spi-wk2xxx_64bit.o
 else
-spi-wk2xxx-objs                        := spi-wk2xxx_32bit
+spi-wk2xxx-objs                        := spi-wk2xxx_32bit.o
 endif
 obj-$(CONFIG_SPI_FIREFLY)       += spi-firefly-demo.o

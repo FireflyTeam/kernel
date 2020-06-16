@@ -65,7 +65,7 @@
 		regulator-max-microvolt = <1800000>;
 	};
 
-	rt5640-sound {
+	rt5640_sound: rt5640-sound {
 		compatible = "simple-audio-card";
 		simple-audio-card,format = "i2s";
 		simple-audio-card,name = "rockchip,rt5640-codec";
@@ -84,6 +84,30 @@
 		};
 		simple-audio-card,codec {
 			sound-dai = <&rt5640>;
+		};
+	};
+
+	es8323_sound: es8323-sound {
+		status = "disabled";
+		compatible = "simple-audio-card";
+		simple-audio-card,format = "i2s";
+		simple-audio-card,name = "rockchip,es8323-codec";
+		simple-audio-card,mclk-fs = <256>;
+		simple-audio-card,widgets =
+			"Microphone", "Mic Jack",
+			"Headphone", "Headphone Jack";
+		simple-audio-card,routing =
+			"Mic Jack", "MICBIAS1",
+			"IN1P", "Mic Jack",
+			"Headphone Jack", "HPOL",
+			"Headphone Jack", "HPOR";
+		simple-audio-card,cpu {
+			sound-dai = <&i2s1>;
+			system-clock-frequency = <11289600>;
+		};
+		simple-audio-card,codec {
+			sound-dai = <&es8323>;
+			system-clock-frequency = <11289600>;
 		};
 	};
 
@@ -186,6 +210,11 @@
 		BT,wake_host_irq = <&gpio0 4 GPIO_ACTIVE_HIGH>; /* GPIO0_A4 */
 		status = "okay";
 	};
+
+   hwversion: hwversion{
+       status = "disabled";
+       compatible = "firefly,hwversion";
+  };
 	/* GPIO1_C7 controls both VCC18_MIPI and VCC28_MIPI, also AF28 */
 	vcc_mipi: vcc_mipi {
 		compatible = "regulator-fixed";
@@ -227,6 +256,19 @@
 	status = "okay";
 	i2c-scl-rising-time-ns = <300>;
 	i2c-scl-falling-time-ns = <15>;
+	clock-frequency = <400000>;
+
+	es8323: es8323@10 {
+		compatible = "everest,es8323";
+		reg = <0x10>;
+		spk-ctl-gpio = <&gpio1 0 GPIO_ACTIVE_HIGH>;
+		clock-names = "mclk";
+		clocks = <&cru SCLK_I2S_8CH_OUT>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2s_8ch_mclk>;
+		#sound-dai-cells = <0>;
+		status = "disabled";
+	};
 
 	rt5640: rt5640@1c {
 		#sound-dai-cells = <0>;

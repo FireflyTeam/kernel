@@ -42,7 +42,7 @@
 #define MUTED_TYPE_OFF			0
 #define MUTED_TYPE_ON			1
 
-#define es8323_DEF_VOL			0x1e
+#define es8323_DEF_VOL			0x22
 
 #define DBG(fmt, ...) printk("%s-%d:" fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
 
@@ -141,17 +141,23 @@ static void spk_detect_do_switch(int flags)
 	}
 }
 
+static void es8323_set_hp_jack_state(struct es8323_priv *es8323)
+{
+    if (es8323->hp_det_gpio != INVALID_GPIO &&
+            gpio_get_value(es8323->hp_det_gpio) == es8323->hp_det_level) {
+        es8323->hp_inserted = 1;
+        snd_soc_jack_report(&es8323->hp_jack, SND_JACK_HEADPHONE, SND_JACK_HEADPHONE);
+    } else {
+        es8323->hp_inserted = 0;
+        snd_soc_jack_report(&es8323->hp_jack, 0, SND_JACK_HEADPHONE);
+    }
+}
+
 static irqreturn_t hp_det_irq_handler(int irq, void *dev_id)
 {
 	struct es8323_priv *es8323 = es8323_private;
 
-	if (!gpio_get_value(es8323->hp_det_gpio)) {
-		es8323->hp_inserted = 0;
-		snd_soc_jack_report(&es8323->hp_jack, 0, SND_JACK_HEADPHONE);
-	} else {
-		es8323->hp_inserted = 1;
-		snd_soc_jack_report(&es8323->hp_jack, SND_JACK_HEADPHONE, SND_JACK_HEADPHONE);
-	}
+	es8323_set_hp_jack_state(es8323);
 
 	/*
 	if (es8323->muted == 0) {
@@ -686,11 +692,13 @@ static int es8323_pcm_startup(struct snd_pcm_substream *substream,
 	/* The set of sample rates that can be supported depends on the
 	 * MCLK supplied to the CODEC - enforce this.
 	 */
+	/*
 	if (!es8323->sysclk) {
 		dev_err(codec->dev,
 			"No MCLK configured, call set_sysclk() on init\n");
 		return -EINVAL;
 	}
+	*/
 
 	snd_pcm_hw_constraint_list(substream->runtime, 0,
 				   SNDRV_PCM_HW_PARAM_RATE,
@@ -943,14 +951,12 @@ static int es8323_probe(struct snd_soc_codec *codec)
 
 	codec->hw_write = (hw_write_t) i2c_master_send;
 	codec->control_data = container_of(codec->dev, struct i2c_client, dev);
+	es8323_codec = codec;
+	es8323_jack_init(codec);
 
-	if (gpio_get_value(es8323->hp_det_gpio) == es8323->hp_det_level)
-		es8323->hp_inserted = 1;
 	if (es8323->aux_det_gpio != INVALID_GPIO)
 		schedule_delayed_work(&aux_det_work, msecs_to_jiffies(500));
 
-	es8323_codec = codec;
-	es8323_jack_init(codec);
 	ret = es8323_reset(codec);
 	if (ret < 0) {
 		dev_err(codec->dev, "Failed to issue reset\n");
@@ -969,12 +975,11 @@ static int es8323_probe(struct snd_soc_codec *codec)
 	snd_soc_write(codec, 0x09, 0x88);	/* ADC L/R PGA =  +24dB */
 	snd_soc_write(codec, 0x0a, 0xf0);	/* ADC INPUT=LIN2/RIN2 */
 	snd_soc_write(codec, 0x0b, 0x82);	/* ADC INPUT=LIN2/RIN2 */
-	snd_soc_write(codec, 0x0b, 0x02);
 	snd_soc_write(codec, 0x0C, 0x4c);	/* I2S-24BIT */
 	snd_soc_write(codec, 0x0d, 0x02);	/* MCLK/LRCK=256 */
 	snd_soc_write(codec, 0x10, 0x00);	/* ADC Left Volume=0db */
 	snd_soc_write(codec, 0x11, 0x00);	/* ADC Right Volume=0db */
-	snd_soc_write(codec, 0x12, 0xea);	/* ALC stereo MAXGAIN: 35.5dB,  MINGAIN: +6dB (Record Volume increased!) */
+	snd_soc_write(codec, 0x12, 0xdb);	/* ALC stereo MAXGAIN: 23.5dB,  MINGAIN: +18dB (Record Volume increased!) */
 	snd_soc_write(codec, 0x13, 0xc0);
 	snd_soc_write(codec, 0x14, 0x05);
 	snd_soc_write(codec, 0x15, 0x06);
@@ -1005,7 +1010,8 @@ static int es8323_probe(struct snd_soc_codec *codec)
 	usleep_range(18000, 20000);
 	snd_soc_write(codec, 0x04, 0x2c);	/* pdn_ana=0,ibiasgen_pdn=0 */
 
-	es8323_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
+    es8323_set_hp_jack_state(es8323);
+    es8323_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
 
 	return 0;
 }
@@ -1033,6 +1039,8 @@ static struct snd_soc_codec_driver soc_codec_dev_es8323 = {
 
 };
 
+extern bool firefly_hwversion_in_range(const struct device_node *device);
+
 static int es8323_i2c_probe(struct i2c_client *i2c,
 			    const struct i2c_device_id *id)
 {
@@ -1042,6 +1050,7 @@ static int es8323_i2c_probe(struct i2c_client *i2c,
 	enum of_gpio_flags flags;
 	struct i2c_adapter *adapter = to_i2c_adapter(i2c->dev.parent);
 	char reg;
+	unsigned int new_addr; 
 
 	if (!i2c_check_functionality(adapter, I2C_FUNC_I2C)) {
 		dev_warn(&adapter->dev,
@@ -1049,6 +1058,16 @@ static int es8323_i2c_probe(struct i2c_client *i2c,
 		return -EIO;
 	}
 
+	/*firefly_hwversion transfer 
+	1.0 -> 0x00010000 
+	2.1 -> 0x00020001
+	21.523 ->0x00210523*/
+	if (firefly_hwversion_in_range(i2c->dev.of_node) && (!of_property_read_u32(i2c->dev.of_node, "reg_new", &new_addr)))
+	{
+		i2c->addr = new_addr;
+		//printk("zjy 8323 new addr %x %x\r\n", i2c->addr, firefly_hwversion);
+	}
+	
 	es8323 = devm_kzalloc(&i2c->dev, sizeof(struct es8323_priv), GFP_KERNEL);
 	if (es8323 == NULL)
 		return -ENOMEM;
@@ -1069,7 +1088,7 @@ static int es8323_i2c_probe(struct i2c_client *i2c,
 		es8323->spk_ctl_gpio = INVALID_GPIO;
 	} else {
 		es8323->spk_gpio_level = (flags & OF_GPIO_ACTIVE_LOW) ? 0 : 1;
-		ret = devm_gpio_request_one(&i2c->dev, es8323->spk_ctl_gpio, GPIOF_DIR_OUT, NULL);
+		ret = devm_gpio_request_one(&i2c->dev, es8323->spk_ctl_gpio, GPIOF_DIR_OUT, "spk_ctl_gpio");
 		if (ret != 0) {
 			dev_err(&i2c->dev, "Failed to request spk_ctl_gpio\n");
 			return ret;
@@ -1095,6 +1114,7 @@ static int es8323_i2c_probe(struct i2c_client *i2c,
 	if (es8323->hp_det_gpio < 0) {
 		dev_info(&i2c->dev, "Can not read property hp_det_gpio\n");
 		es8323->hp_det_gpio = INVALID_GPIO;
+		es8323->hp_det_level = -1;
 	} else {
 		es8323->hp_det_level = (flags & OF_GPIO_ACTIVE_LOW) ? 0 : 1;
 		ret = devm_gpio_request_one(&i2c->dev, es8323->hp_det_gpio, GPIOF_IN, NULL);

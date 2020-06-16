@@ -75,6 +75,7 @@
 #define STREAM_MAX_SP_RSZ_OUTPUT_HEIGHT		1920
 #define STREAM_MIN_RSZ_OUTPUT_WIDTH		32
 #define STREAM_MIN_RSZ_OUTPUT_HEIGHT		16
+#define STREAM_OUTPUT_STEP_WISE			8
 
 #define STREAM_MAX_MP_SP_INPUT_WIDTH STREAM_MAX_MP_RSZ_OUTPUT_WIDTH
 #define STREAM_MAX_MP_SP_INPUT_HEIGHT STREAM_MAX_MP_RSZ_OUTPUT_HEIGHT
@@ -1341,8 +1342,10 @@ static void rkisp1_buf_queue(struct vb2_buffer *vb)
 			u32 sizeimage = pixm->plane_fmt[0].sizeimage;
 			u32 *buf = vb2_plane_vaddr(vb, 0);
 
-			*buf = RKISP1_DMATX_CHECK;
-			*(buf + sizeimage / 4 - 1) = RKISP1_DMATX_CHECK;
+			if (buf) {
+				*buf = RKISP1_DMATX_CHECK;
+				*(buf + sizeimage / 4 - 1) = RKISP1_DMATX_CHECK;
+			}
 		}
 	}
 
@@ -1506,18 +1509,19 @@ rkisp1_start_streaming(struct vb2_queue *queue, unsigned int count)
 	struct rkisp1_device *dev = stream->ispdev;
 	struct v4l2_device *v4l2_dev = &dev->v4l2_dev;
 	int ret;
+	unsigned int i;
 
 	if (WARN_ON(stream->streaming))
 		return -EBUSY;
 
-	if (!dev->active_sensor &&
-		dev->isp_inp != INP_DMARX_ISP) {
+	if (dev->isp_inp != INP_DMARX_ISP) {
+		/* Always update sensor info in case media topology changed */
 		ret = rkisp1_update_sensor_info(dev);
 		if (ret < 0) {
 			v4l2_err(v4l2_dev,
 				 "update sensor info failed %d\n",
 				 ret);
-			return ret;
+			goto buffer_done;
 		}
 	}
 
@@ -1527,7 +1531,8 @@ rkisp1_start_streaming(struct vb2_queue *queue, unsigned int count)
 		if (stream->id != RKISP1_STREAM_SP) {
 			v4l2_err(v4l2_dev,
 				"only selfpath support interlaced\n");
-			return -EINVAL;
+			ret = -EINVAL;
+			goto buffer_done;
 		}
 		stream->interlaced = true;
 		stream->u.sp.field = RKISP_FIELD_INVAL;
@@ -1536,7 +1541,7 @@ rkisp1_start_streaming(struct vb2_queue *queue, unsigned int count)
 
 	ret = rkisp1_create_dummy_buf(stream);
 	if (ret < 0)
-		return ret;
+		goto buffer_done;
 
 	/* enable clocks/power-domains */
 	ret = dev->pipe.open(&dev->pipe, &node->vdev.entity, true);
@@ -1573,6 +1578,14 @@ close_pipe:
 	dev->pipe.close(&dev->pipe);
 destroy_dummy_buf:
 	rkisp1_destroy_dummy_buf(stream);
+buffer_done:
+	for (i = 0; i < queue->num_buffers; ++i) {
+		struct vb2_buffer *vb;
+
+		vb = queue->bufs[i];
+		if (vb->state == VB2_BUF_STATE_ACTIVE)
+			vb2_buffer_done(vb, VB2_BUF_STATE_QUEUED);
+	}
 
 	return ret;
 }
@@ -1595,7 +1608,7 @@ static int rkisp_init_vb2_queue(struct vb2_queue *q,
 	node = queue_to_node(q);
 
 	q->type = buf_type;
-	q->io_modes = VB2_MMAP | VB2_DMABUF;
+	q->io_modes = VB2_MMAP | VB2_USERPTR | VB2_DMABUF;
 	q->drv_priv = stream;
 	q->ops = &rkisp1_vb2_ops;
 	q->mem_ops = &vb2_dma_contig_memops;
@@ -1605,6 +1618,23 @@ static int rkisp_init_vb2_queue(struct vb2_queue *q,
 	q->lock = &stream->ispdev->apilock;
 
 	return vb2_queue_init(q);
+}
+
+/*
+ * Make sure max resize/output resolution is smaller than
+ * isp sub device output size. This assumes it's not
+ * recommended to use ISP scale-up function to get output size
+ * that exceeds sensor max resolution.
+ */
+static void restrict_rsz_resolution(struct rkisp1_device *dev,
+				    const struct stream_config *config,
+				    struct v4l2_rect *max_rsz)
+{
+	struct v4l2_rect *input_win;
+
+	input_win = rkisp1_get_isp_sd_win(&dev->isp_sdev);
+	max_rsz->width = min_t(int, input_win->width, config->max_rsz_width);
+	max_rsz->height = min_t(int, input_win->height, config->max_rsz_height);
 }
 
 static int rkisp1_set_fmt(struct rkisp1_stream *stream,
@@ -1631,15 +1661,16 @@ static int rkisp1_set_fmt(struct rkisp1_stream *stream,
 	}
 
 	if (stream->id != RKISP1_STREAM_RAW) {
+		struct v4l2_rect max_rsz;
+
 		other_stream =
 			&stream->ispdev->stream[!stream->id ^ 1];
 		/* do checks on resolution */
+		restrict_rsz_resolution(stream->ispdev, config, &max_rsz);
 		pixm->width = clamp_t(u32, pixm->width,
-			config->min_rsz_width,
-			config->max_rsz_width);
+				      config->min_rsz_width, max_rsz.width);
 		pixm->height = clamp_t(u32, pixm->height,
-			config->min_rsz_height,
-			config->max_rsz_height);
+				       config->min_rsz_height, max_rsz.height);
 	} else {
 		other_stream =
 			&stream->ispdev->stream[RKISP1_STREAM_MP];
@@ -1832,6 +1863,80 @@ static int rkisp1_try_fmt_vid_cap_mplane(struct file *file, void *fh,
 	return rkisp1_set_fmt(stream, &f->fmt.pix_mp, true);
 }
 
+static int rkisp_enum_framesizes(struct file *file, void *prov,
+				 struct v4l2_frmsizeenum *fsize)
+{
+	struct rkisp1_stream *stream = video_drvdata(file);
+	const struct stream_config *config = stream->config;
+	struct v4l2_frmsize_stepwise *s = &fsize->stepwise;
+	struct v4l2_frmsize_discrete *d = &fsize->discrete;
+	const struct ispsd_out_fmt *input_isp_fmt;
+	struct v4l2_rect max_rsz;
+
+	if (fsize->index != 0)
+		return -EINVAL;
+
+	if (!find_fmt(stream, fsize->pixel_format))
+		return -EINVAL;
+
+	restrict_rsz_resolution(stream->ispdev, config, &max_rsz);
+
+	input_isp_fmt = rkisp1_get_ispsd_out_fmt(&stream->ispdev->isp_sdev);
+	if (input_isp_fmt->fmt_type == FMT_BAYER) {
+		fsize->type = V4L2_FRMSIZE_TYPE_DISCRETE;
+		d->width = max_rsz.width;
+		d->height = max_rsz.height;
+	} else {
+		fsize->type = V4L2_FRMSIZE_TYPE_STEPWISE;
+		s->min_width = STREAM_MIN_RSZ_OUTPUT_WIDTH;
+		s->min_height = STREAM_MIN_RSZ_OUTPUT_HEIGHT;
+		s->max_width = max_rsz.width;
+		s->max_height = max_rsz.height;
+		s->step_width = STREAM_OUTPUT_STEP_WISE;
+		s->step_height = STREAM_OUTPUT_STEP_WISE;
+	}
+
+	return 0;
+}
+
+static int rkisp_enum_frameintervals(struct file *file, void *fh,
+				     struct v4l2_frmivalenum *fival)
+{
+	const struct rkisp1_stream *stream = video_drvdata(file);
+	struct rkisp1_device *dev = stream->ispdev;
+	struct rkisp1_sensor_info *sensor = dev->active_sensor;
+	struct v4l2_subdev_frame_interval fi;
+	int ret;
+
+	if (fival->index != 0)
+		return -EINVAL;
+
+	if (!sensor) {
+		/* TODO: active_sensor is NULL if using DMARX path */
+		v4l2_err(&dev->v4l2_dev, "%s Not active sensor\n", __func__);
+		return -ENODEV;
+	}
+
+	ret = v4l2_subdev_call(sensor->sd, video, g_frame_interval, &fi);
+	if (ret && ret != -ENOIOCTLCMD) {
+		return ret;
+	} else if (ret == -ENOIOCTLCMD) {
+		/* Set a default value for sensors not implements ioctl */
+		fi.interval.numerator = 1;
+		fi.interval.denominator = 30;
+	}
+
+	fival->type = V4L2_FRMIVAL_TYPE_CONTINUOUS;
+	fival->stepwise.step.numerator = 1;
+	fival->stepwise.step.denominator = 1;
+	fival->stepwise.max.numerator = 1;
+	fival->stepwise.max.denominator = 1;
+	fival->stepwise.min.numerator = fi.interval.numerator;
+	fival->stepwise.min.denominator = fi.interval.denominator;
+
+	return 0;
+}
+
 static int rkisp1_enum_fmt_vid_cap_mplane(struct file *file, void *priv,
 					  struct v4l2_fmtdesc *f)
 {
@@ -1994,6 +2099,8 @@ static const struct v4l2_ioctl_ops rkisp1_v4l2_ioctl_ops = {
 	.vidioc_s_selection = rkisp1_s_selection,
 	.vidioc_g_selection = rkisp1_g_selection,
 	.vidioc_querycap = rkisp1_querycap,
+	.vidioc_enum_frameintervals = rkisp_enum_frameintervals,
+	.vidioc_enum_framesizes = rkisp_enum_framesizes,
 };
 
 static void rkisp1_unregister_stream_vdev(struct rkisp1_stream *stream)
@@ -2119,6 +2226,9 @@ int rkisp1_dma_attach_device(struct rkisp1_device *rkisp1_dev)
 	struct device *dev = rkisp1_dev->dev;
 	int ret;
 
+	if (!domain)
+		return 0;
+
 	ret = iommu_attach_device(domain, dev);
 	if (ret) {
 		dev_err(dev, "Failed to attach iommu device\n");
@@ -2139,7 +2249,8 @@ void rkisp1_dma_detach_device(struct rkisp1_device *rkisp1_dev)
 	struct iommu_domain *domain = rkisp1_dev->domain;
 	struct device *dev = rkisp1_dev->dev;
 
-	iommu_detach_device(domain, dev);
+	if (domain)
+		iommu_detach_device(domain, dev);
 }
 
 /****************  Interrupter Handler ****************/
@@ -2226,6 +2337,8 @@ void rkisp1_mipi_dmatx0_end(u32 status, struct rkisp1_device *dev)
 			u32 sizeimage = stream->out_fmt.plane_fmt[0].sizeimage;
 
 			buf = (u32 *)vb2_plane_vaddr(&stream->curr_buf->vb.vb2_buf, 0);
+			if (!buf)
+				goto out;
 			end = *(buf + sizeimage / 4 - 1);
 			while (end == RKISP1_DMATX_CHECK) {
 				udelay(1);
@@ -2245,6 +2358,7 @@ void rkisp1_mipi_dmatx0_end(u32 status, struct rkisp1_device *dev)
 				}
 			}
 		}
+out:
 		mi_frame_end(stream);
 	}
 }

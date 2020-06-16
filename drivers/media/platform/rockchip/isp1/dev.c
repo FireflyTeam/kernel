@@ -40,6 +40,7 @@
 #include <linux/of_gpio.h>
 #include <linux/of_graph.h>
 #include <linux/of_platform.h>
+#include <linux/of_reserved_mem.h>
 #include <linux/pm_runtime.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/regmap.h>
@@ -164,6 +165,9 @@ static int __isp_pipeline_s_isp_clk(struct rkisp1_pipeline *p)
 		    dev->isp_sdev.in_fmt.bus_width;
 	data_rate >>= 3;
 	do_div(data_rate, 1000 * 1000);
+
+	/* increase 25% margin */
+	data_rate += data_rate >> 2;
 
 	/* compare with isp clock adjustment table */
 	for (i = 0; i < dev->num_clk_rate_tbl; i++)
@@ -467,96 +471,82 @@ static int rkisp1_create_links(struct rkisp1_device *dev)
 
 static int _set_pipeline_default_fmt(struct rkisp1_device *dev)
 {
-	int ret;
 	struct v4l2_subdev *isp;
-	struct v4l2_subdev *sensor;
 	struct v4l2_subdev_format fmt;
 	struct v4l2_subdev_selection sel;
 	struct v4l2_subdev_pad_config cfg;
-	u32 width, height;
+	u32 width, height, max_width, max_height;
 	u32 ori_width, ori_height, ori_code;
 
-	if (dev->num_sensors) {
-		sensor = dev->sensors[0].sd;
-		isp = &dev->isp_sdev.sd;
+	isp = &dev->isp_sdev.sd;
 
-		/* get fmt from sensor */
-		fmt.which = V4L2_SUBDEV_FORMAT_ACTIVE;
-		ret = v4l2_subdev_call(sensor, pad, get_fmt, &cfg, &fmt);
-		if (ret) {
-			dev_err(dev->dev,
-				"failed to get fmt for %s\n",
-				sensor->name);
+	fmt = dev->active_sensor->fmt;
+	ori_width = fmt.format.width;
+	ori_height = fmt.format.height;
+	ori_code = fmt.format.code;
 
-			return -ENXIO;
+	if ((fmt.format.code & RKISP1_MEDIA_BUS_FMT_MASK) !=
+	    RKISP1_MEDIA_BUS_FMT_BAYER) {
+		max_width = CIF_ISP_INPUT_W_MAX;
+		max_height = CIF_ISP_INPUT_H_MAX;
+	} else {
+		switch (dev->isp_ver) {
+		case ISP_V12:
+			max_width = CIF_ISP_INPUT_W_MAX_V12;
+			max_height = CIF_ISP_INPUT_H_MAX_V12;
+			break;
+		case ISP_V13:
+			max_width = CIF_ISP_INPUT_W_MAX_V13;
+			max_height = CIF_ISP_INPUT_H_MAX_V13;
+			break;
+		default:
+			max_width = CIF_ISP_INPUT_W_MAX;
+			max_height = CIF_ISP_INPUT_H_MAX;
 		}
-
-		ori_width = fmt.format.width;
-		ori_height = fmt.format.height;
-		ori_code = fmt.format.code;
-
-		if (dev->isp_ver == ISP_V12) {
-			fmt.format.width  = clamp_t(u32, fmt.format.width,
-						CIF_ISP_INPUT_W_MIN,
-						CIF_ISP_INPUT_W_MAX_V12);
-			fmt.format.height = clamp_t(u32, fmt.format.height,
-						CIF_ISP_INPUT_H_MIN,
-						CIF_ISP_INPUT_H_MAX_V12);
-		} else if (dev->isp_ver == ISP_V13) {
-			fmt.format.width  = clamp_t(u32, fmt.format.width,
-						CIF_ISP_INPUT_W_MIN,
-						CIF_ISP_INPUT_W_MAX_V13);
-			fmt.format.height = clamp_t(u32, fmt.format.height,
-						CIF_ISP_INPUT_H_MIN,
-						CIF_ISP_INPUT_H_MAX_V13);
-		} else {
-			fmt.format.width  = clamp_t(u32, fmt.format.width,
-						CIF_ISP_INPUT_W_MIN,
-						CIF_ISP_INPUT_W_MAX);
-			fmt.format.height = clamp_t(u32, fmt.format.height,
-						CIF_ISP_INPUT_H_MIN,
-						CIF_ISP_INPUT_H_MAX);
-		}
-
-		sel.r.left = 0;
-		sel.r.top = 0;
-		width = fmt.format.width;
-		height = fmt.format.height;
-		sel.r.width = fmt.format.width;
-		sel.r.height = fmt.format.height;
-		sel.target = V4L2_SEL_TGT_CROP;
-		sel.which = V4L2_SUBDEV_FORMAT_ACTIVE;
-		fmt.which = V4L2_SUBDEV_FORMAT_ACTIVE;
-		memset(&cfg, 0, sizeof(cfg));
-
-		/* change fmt&size for RKISP1_ISP_PAD_SINK */
-		fmt.pad = RKISP1_ISP_PAD_SINK;
-		sel.pad = RKISP1_ISP_PAD_SINK;
-		v4l2_subdev_call(isp, pad, set_fmt, &cfg, &fmt);
-		v4l2_subdev_call(isp, pad, set_selection, &cfg, &sel);
-
-		/* change fmt&size for RKISP1_ISP_PAD_SOURCE_PATH */
-		if ((fmt.format.code & RKISP1_MEDIA_BUS_FMT_MASK) ==
-		    RKISP1_MEDIA_BUS_FMT_BAYER)
-			fmt.format.code = MEDIA_BUS_FMT_YUYV8_2X8;
-
-		fmt.pad = RKISP1_ISP_PAD_SOURCE_PATH;
-		sel.pad = RKISP1_ISP_PAD_SOURCE_PATH;
-		v4l2_subdev_call(isp, pad, set_fmt, &cfg, &fmt);
-		v4l2_subdev_call(isp, pad, set_selection, &cfg, &sel);
-
-		/* change fmt&size of MP/SP */
-		rkisp1_set_stream_def_fmt(dev, RKISP1_STREAM_MP,
-					  width, height, V4L2_PIX_FMT_YUYV);
-		if (dev->isp_ver != ISP_V10_1)
-			rkisp1_set_stream_def_fmt(dev, RKISP1_STREAM_SP,
-						  width, height, V4L2_PIX_FMT_YUYV);
-		if (dev->isp_ver == ISP_V12 ||
-			dev->isp_ver == ISP_V13)
-			rkisp1_set_stream_def_fmt(dev, RKISP1_STREAM_RAW,
-						  ori_width, ori_height,
-						  rkisp1_mbus_pixelcode_to_v4l2(ori_code));
 	}
+	fmt.format.width  = clamp_t(u32, fmt.format.width,
+				CIF_ISP_INPUT_W_MIN,
+				max_width);
+	fmt.format.height = clamp_t(u32, fmt.format.height,
+				CIF_ISP_INPUT_H_MIN,
+				max_height);
+
+	sel.r.left = 0;
+	sel.r.top = 0;
+	width = fmt.format.width;
+	height = fmt.format.height;
+	sel.r.width = fmt.format.width;
+	sel.r.height = fmt.format.height;
+	sel.target = V4L2_SEL_TGT_CROP;
+	sel.which = V4L2_SUBDEV_FORMAT_ACTIVE;
+	fmt.which = V4L2_SUBDEV_FORMAT_ACTIVE;
+	memset(&cfg, 0, sizeof(cfg));
+
+	/* change fmt&size for RKISP1_ISP_PAD_SINK */
+	fmt.pad = RKISP1_ISP_PAD_SINK;
+	sel.pad = RKISP1_ISP_PAD_SINK;
+	v4l2_subdev_call(isp, pad, set_fmt, &cfg, &fmt);
+	v4l2_subdev_call(isp, pad, set_selection, &cfg, &sel);
+
+	/* change fmt&size for RKISP1_ISP_PAD_SOURCE_PATH */
+	if ((fmt.format.code & RKISP1_MEDIA_BUS_FMT_MASK) ==
+	    RKISP1_MEDIA_BUS_FMT_BAYER)
+		fmt.format.code = MEDIA_BUS_FMT_YUYV8_2X8;
+
+	fmt.pad = RKISP1_ISP_PAD_SOURCE_PATH;
+	sel.pad = RKISP1_ISP_PAD_SOURCE_PATH;
+	v4l2_subdev_call(isp, pad, set_fmt, &cfg, &fmt);
+	v4l2_subdev_call(isp, pad, set_selection, &cfg, &sel);
+
+	/* change fmt&size of MP/SP */
+	rkisp1_set_stream_def_fmt(dev, RKISP1_STREAM_MP,
+				  width, height, V4L2_PIX_FMT_YUYV);
+	if (dev->isp_ver != ISP_V10_1)
+		rkisp1_set_stream_def_fmt(dev, RKISP1_STREAM_SP,
+					  width, height, V4L2_PIX_FMT_YUYV);
+	if (dev->isp_ver == ISP_V12 || dev->isp_ver == ISP_V13)
+		rkisp1_set_stream_def_fmt(dev, RKISP1_STREAM_RAW, ori_width,
+			ori_height, rkisp1_mbus_pixelcode_to_v4l2(ori_code));
 
 	return 0;
 }
@@ -575,6 +565,12 @@ static int subdev_notifier_complete(struct v4l2_async_notifier *notifier)
 	ret = v4l2_device_register_subdev_nodes(&dev->v4l2_dev);
 	if (ret < 0)
 		goto unlock;
+
+	ret = rkisp1_update_sensor_info(dev);
+	if (ret < 0) {
+		v4l2_err(&dev->v4l2_dev, "update sensor failed\n");
+		goto unlock;
+	}
 
 	ret = _set_pipeline_default_fmt(dev);
 	if (ret < 0)
@@ -1043,8 +1039,28 @@ static void rkisp1_iommu_cleanup(struct rkisp1_device *rkisp1_dev)
 	struct iommu_domain *domain = rkisp1_dev->domain;
 	struct device *dev = rkisp1_dev->dev;
 
-	iommu_detach_device(domain, dev);
-	iommu_domain_free(domain);
+	if (domain) {
+		iommu_detach_device(domain, dev);
+		iommu_domain_free(domain);
+	}
+}
+
+static inline bool is_iommu_enable(struct device *dev)
+{
+	struct device_node *iommu;
+
+	iommu = of_parse_phandle(dev->of_node, "iommus", 0);
+	if (!iommu) {
+		dev_info(dev, "no iommu attached, using non-iommu buffers\n");
+		return false;
+	} else if (!of_device_is_available(iommu)) {
+		dev_info(dev, "iommu is disabled, using non-iommu buffers\n");
+		of_node_put(iommu);
+		return false;
+	}
+	of_node_put(iommu);
+
+	return true;
 }
 
 static int rkisp1_vs_irq_parse(struct platform_device *pdev)
@@ -1127,6 +1143,7 @@ static int rkisp1_plat_probe(struct platform_device *pdev)
 		return PTR_ERR(isp_dev->base_addr);
 
 	match_data = match->data;
+	isp_dev->mipi_irq = -1;
 	res = platform_get_resource_byname(pdev, IORESOURCE_IRQ,
 					   match_data->irqs[0].name);
 	if (res) {
@@ -1140,6 +1157,9 @@ static int rkisp1_plat_probe(struct platform_device *pdev)
 				return irq;
 			}
 
+			if (!strcmp(match_data->irqs[i].name, "mipi_irq"))
+				isp_dev->mipi_irq = irq;
+
 			ret = devm_request_irq(dev, irq,
 					       match_data->irqs[i].irq_hdl,
 					       IRQF_SHARED,
@@ -1151,6 +1171,9 @@ static int rkisp1_plat_probe(struct platform_device *pdev)
 					ret);
 				return ret;
 			}
+
+			if (isp_dev->mipi_irq == irq)
+				disable_irq(isp_dev->mipi_irq);
 		}
 	} else {
 		/* no irq names in dts */
@@ -1184,9 +1207,11 @@ static int rkisp1_plat_probe(struct platform_device *pdev)
 	isp_dev->num_clk_rate_tbl = match_data->num_clk_rate_tbl;
 
 	mutex_init(&isp_dev->apilock);
+	mutex_init(&isp_dev->iqlock);
 	atomic_set(&isp_dev->pipe.power_cnt, 0);
 	atomic_set(&isp_dev->pipe.stream_cnt, 0);
 	atomic_set(&isp_dev->open_cnt, 0);
+	init_waitqueue_head(&isp_dev->sync_onoff);
 	isp_dev->pipe.open = rkisp1_pipeline_open;
 	isp_dev->pipe.close = rkisp1_pipeline_close;
 	isp_dev->pipe.set_stream = rkisp1_pipeline_set_stream;
@@ -1225,7 +1250,14 @@ static int rkisp1_plat_probe(struct platform_device *pdev)
 	if (ret < 0)
 		goto err_unreg_media_dev;
 
-	rkisp1_iommu_init(isp_dev);
+	if (is_iommu_enable(dev)) {
+		rkisp1_iommu_init(isp_dev);
+	} else {
+		ret = of_reserved_mem_device_init(dev);
+		if (ret)
+			v4l2_warn(v4l2_dev,
+				  "No reserved memory region assign to isp\n");
+	}
 	pm_runtime_enable(&pdev->dev);
 
 	ret = rkisp1_vs_irq_parse(pdev);
@@ -1296,6 +1328,10 @@ static int __maybe_unused rkisp1_runtime_suspend(struct device *dev)
 {
 	struct rkisp1_device *isp_dev = dev_get_drvdata(dev);
 
+	if (isp_dev->isp_ver == ISP_V12 || isp_dev->isp_ver == ISP_V13) {
+		if (isp_dev->mipi_irq >= 0)
+			disable_irq(isp_dev->mipi_irq);
+	}
 	rkisp1_disable_sys_clk(isp_dev);
 	return pinctrl_pm_select_sleep_state(dev);
 }
@@ -1309,6 +1345,14 @@ static int __maybe_unused rkisp1_runtime_resume(struct device *dev)
 	if (ret < 0)
 		return ret;
 	rkisp1_enable_sys_clk(isp_dev);
+
+	if (isp_dev->isp_ver == ISP_V12 || isp_dev->isp_ver == ISP_V13) {
+		writel(0, isp_dev->base_addr + CIF_ISP_CSI0_MASK1);
+		writel(0, isp_dev->base_addr + CIF_ISP_CSI0_MASK2);
+		writel(0, isp_dev->base_addr + CIF_ISP_CSI0_MASK3);
+		if (isp_dev->mipi_irq >= 0)
+			enable_irq(isp_dev->mipi_irq);
+	}
 
 	return 0;
 }

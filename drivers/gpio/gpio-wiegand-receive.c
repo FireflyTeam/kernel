@@ -410,7 +410,7 @@ static struct file_operations rfcd_fops =  {
 	.unlocked_ioctl = rfcd_ioctl,
 };
 
-//extern bool firefly_hwversion_in_range(const struct device_node *device);
+extern bool firefly_hwversion_in_range(const struct device_node *device);
 
 static int wiegand_rec_probe(struct platform_device *pdev) {
 	int err, result;
@@ -418,8 +418,8 @@ static int wiegand_rec_probe(struct platform_device *pdev) {
     dev_t devno;
     struct device_node *np = pdev->dev.of_node;
 
-//	if (!firefly_hwversion_in_range(np))
-//		return -EINVAL;
+	if (!firefly_hwversion_in_range(np))
+		return -EINVAL;
 
 	devno = MKDEV(WIEGAND_MAJOR, 1);
 	

@@ -167,6 +167,13 @@ static int rk808_rtc_set_time(struct device *dev, struct rtc_time *tm)
 		1900 + tm->tm_year, tm->tm_mon + 1, tm->tm_mday,
 		tm->tm_wday, tm->tm_hour, tm->tm_min, tm->tm_sec);
 	gregorian_to_rockchip(tm);
+
+	if (tm->tm_year < 100 || tm->tm_year > 199) {
+		dev_err(dev, "Unsupported RTC time of tm_year: %d\n",
+			tm->tm_year);
+		return -EINVAL;
+	}
+
 	rtc_data[0] = bin2bcd(tm->tm_sec);
 	rtc_data[1] = bin2bcd(tm->tm_min);
 	rtc_data[2] = bin2bcd(tm->tm_hour);
@@ -282,6 +289,13 @@ static int rk808_rtc_setalarm(struct device *dev, struct rtc_wkalrm *alrm)
 		alrm->time.tm_min, alrm->time.tm_sec);
 
 	gregorian_to_rockchip(&alrm->time);
+
+	if (alrm->time.tm_year < 100 || alrm->time.tm_year > 199) {
+		dev_err(dev, "Unsupported RTC alrm time of tm_year: %d\n",
+			alrm->time.tm_year);
+		return -EINVAL;
+	}
+
 	alrm_data[0] = bin2bcd(alrm->time.tm_sec);
 	alrm_data[1] = bin2bcd(alrm->time.tm_min);
 	alrm_data[2] = bin2bcd(alrm->time.tm_hour);
@@ -403,6 +417,8 @@ static struct rk_rtc_compat_reg rk817_creg = {
 	.seconds_reg = RK817_SECONDS_REG,
 };
 
+extern bool firefly_hwversion_in_range(const struct device_node *device);
+
 static int rk808_rtc_probe(struct platform_device *pdev)
 {
 	struct rk808 *rk808 = dev_get_drvdata(pdev->dev.parent);
@@ -423,6 +439,9 @@ static int rk808_rtc_probe(struct platform_device *pdev)
 			dev_info(&pdev->dev, "device is disabled\n");
 			return -EINVAL;
 		}
+		if (!firefly_hwversion_in_range(np))
+			return -EINVAL;
+
 		break;
 	default:
 		break;

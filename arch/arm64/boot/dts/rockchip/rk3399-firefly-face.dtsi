@@ -120,6 +120,7 @@
     wiegand-receive {
         compatible = "firefly,wiegand-receive";
         status = "okay";
+        firefly,hwversion_range_gt = <1 0x00020000>;    // >= v2.0
         wiegandin_d0 = <&gpio1 4 GPIO_ACTIVE_HIGH>;
         wiegandin_d1 = <&gpio1 2 GPIO_ACTIVE_HIGH>;
     };
@@ -137,8 +138,8 @@
         status = "okay";
     };
 
-	es8323_sound: es8323-sound {
-		status = "disabled";
+	es8323_sound_new: es8323-sound-new {
+		status = "okay";
 		compatible = "simple-audio-card";
 		simple-audio-card,format = "i2s";
 		simple-audio-card,name = "rockchip,es8323-codec";
@@ -156,10 +157,32 @@
 			system-clock-frequency = <11289600>;
 		};
 		simple-audio-card,codec {
-			sound-dai = <&es8323>;
+			sound-dai = <&es8323_new>;
 			system-clock-frequency = <11289600>;
 		};
 	};
+
+    pwm_white_led: pwm-white-led {
+        status = "okay";
+        compatible = "firefly,rk3399-face-white-led";
+        pwms = <&pwm0 0 500000 0>;   //pwm1:PWM number   0 10000:PWM period in nanoseconds  1:polarity
+        firefly,hwversion_range_gt = <1 0x00020003>;
+        brightness-levels = <0 100000 150000 200000 250000 300000 350000 400000 450000>;
+        default-brightness-level = <0>;
+    };
+
+};
+
+&hwversion{
+   status = "okay";
+   versions-list= <
+       //version min_adc max_adc
+       0x00010000 990 1024  //V1.0
+       0x00010001 650 710   //V1.1
+       0x00020001 480 540   //V2.1
+       0x00020003 315 375   //V2.3
+       >;
+   io-channel = <0>;
 };
 
 &vdd_log {
@@ -257,24 +280,11 @@
 
 &i2c1 {
 
-	status = "okay";
-	i2c-scl-rising-time-ns = <300>;
-	i2c-scl-falling-time-ns = <15>;
-	/delete-node/ ov13850@36;
-	/delete-node/ ov13850@46;
-
-	es8323: es8323@10 {
-        compatible = "everest,es8323";
-        status = "okay";
-        reg = <0x11>;
-        spk-ctl-gpio = <&gpio1 0 GPIO_ACTIVE_HIGH>;
-        clock-names = "mclk";
-        clocks = <&cru SCLK_I2S_8CH_OUT>;
-        pinctrl-names = "default";
-        pinctrl-0 = <&i2s_8ch_mclk>;
-		pinctrl-1 = <&ear_ctl_h>;
-        #sound-dai-cells = <0>;
-    };
+    status = "okay";
+    i2c-scl-rising-time-ns = <300>;
+    i2c-scl-falling-time-ns = <15>;
+    /delete-node/ ov13850@36;
+    /delete-node/ ov13850@46;
 
 	XC7022: XC7022@36{
 		status = "disabled";
@@ -332,39 +342,67 @@
 };
 
 &i2c4 {
-	status = "okay";
-	i2c-scl-rising-time-ns = <600>;
-	i2c-scl-falling-time-ns = <20>;
+    status = "okay";
+    i2c-scl-rising-time-ns = <600>;
+    i2c-scl-falling-time-ns = <20>;
 
-	gsl3680: gsl3680@40 {
-	    status = "disabled";
-	    compatible = "gslX680";
-	    reg = <0x40>;
-	    screen_max_x = <800>;
-	    screen_max_y = <1280>;
-	    flip-x = <0>;
-	    flip-y = <0>;
-	    swap-xy = <0>;
-	    gsl,fw = <0>;
-	    touch-gpio = <&gpio4 28 IRQ_TYPE_LEVEL_LOW>;
-	    reset-gpio = <&gpio4 21 GPIO_ACTIVE_HIGH>;
-	};
+    gsl3680: gsl3680@40 {
+        status = "disabled";
+        compatible = "gslX680";
+        reg = <0x40>;
+        screen_max_x = <800>;
+        screen_max_y = <1280>;
+        flip-x = <0>;
+        flip-y = <0>;
+        swap-xy = <0>;
+        gsl,fw = <0>;
+        touch-gpio = <&gpio4 28 IRQ_TYPE_LEVEL_LOW>;
+        reset-gpio = <&gpio4 21 GPIO_ACTIVE_HIGH>;
+    };
 };
 
 
 &i2c7 {
-	status = "okay";
-	i2c-scl-rising-time-ns = <300>;
-	i2c-scl-falling-time-ns = <15>;
+    status = "okay";
+    i2c-scl-rising-time-ns = <300>;
+    i2c-scl-falling-time-ns = <15>;
 
-	hym8563: hym8563@51 {
-		compatible = "haoyu,hym8563";
-		reg = <0x51>;
-        rtc-irq-gpio = <&gpio3 2 IRQ_TYPE_LEVEL_LOW>;
-		/* rtc_int is not connected */
+    es8323_new: es8323_new@11 {
+		compatible = "everest,es8323";
+		reg = <0x11>;
+		spk-ctl-gpio = <&gpio1 0 GPIO_ACTIVE_HIGH>;
+		clock-names = "mclk";
+		clocks = <&cru SCLK_I2S_8CH_OUT>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2s_8ch_mclk>;
+		#sound-dai-cells = <0>;
+		status = "okay";
+		firefly,hwversion_range_gt = <1 0x00020000>;    // < v2.0
+    };
+
+    hym8563: hym8563@51 {
+        compatible = "haoyu,hym8563";
+        reg = <0x51>;
+        rtc-irq-gpio = <&gpio4 24 IRQ_TYPE_LEVEL_LOW>;
+        /* rtc_int is not connected */
         status = "okay";
-	};
+        firefly,hwversion_range_gt = <1 0x00020000>;    // >= v2.0
+    };
 
+    dl1825: dl1825@35 {
+        compatible = "firefly,dl1825";
+        reg = <0x35>;
+        nfc-irq-gpio = <&gpio2 3 IRQ_TYPE_EDGE_RISING>;
+        status = "okay";
+        firefly,hwversion_range_gt = <1 0x00020000>;    // >= v2.0
+    };
+};
+
+&rk808 {
+    rtc {
+	compatible = "rockchip,rk808-rtc";
+        firefly,hwversion_range_lt = <0 0x00020000>;    // < v2.0
+    };
 };
 
 &io_domains {
@@ -400,6 +438,7 @@
                         <2 4 RK_FUNC_GPIO &pcfg_output_high>,
                         //<0 8 RK_FUNC_GPIO &pcfg_output_low>,
                         <0 8 RK_FUNC_GPIO &pcfg_output_high>,
+                        <4 23 RK_FUNC_GPIO &pcfg_output_high>,
                         <4 24 RK_FUNC_GPIO &pcfg_output_low>,
                         <4 27 RK_FUNC_GPIO &pcfg_output_low>,
                         <4 29 RK_FUNC_GPIO &pcfg_output_high>;
@@ -458,8 +497,22 @@
     clock_in_out = "output";
 };
 
+&rt5640_sound{
+	status = "disabled";
+};
+
 &rt5640 {
 	status = "disabled";
+};
+
+&es8323{
+	status = "okay";
+	reg_new = <0x11>;
+        firefly,hwversion_range_lt = <0 0x00020000>;    // < v2.0
+};
+
+&es8323_sound{
+	status = "okay";
 };
 
 &fusb0 {

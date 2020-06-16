@@ -559,6 +559,12 @@ config USB_CAM_GPIO
 	help
 	  Enable this driver will support usb camera gpio control
 
+config DL1825
+	bool "NFC DL1825 driver"
+	default n
+	help
+	  Enable this driver will support nfc .
+
 config GPIO_DET
 	bool "gpio detection driver"
 	help

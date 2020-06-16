@@ -63,11 +63,20 @@ static void pwm_backlight_power_on(struct pwm_bl_data *pb, int brightness)
 
 static void pwm_backlight_power_off(struct pwm_bl_data *pb)
 {
+	struct device_node *node = pb->dev->of_node;
+	int value = 0;
+
 	if (!pb->enabled)
 		return;
 
-	pwm_config(pb->pwm, 0, pb->period);
-	pwm_disable(pb->pwm);
+	//pwm_config(pb->pwm, 0, pb->period);
+	//pwm_disable(pb->pwm);
+	if(!of_property_read_u32(node, "polarity", &value))
+		pwm_config(pb->pwm, 25000, pb->period);
+	else{
+		pwm_config(pb->pwm, 0, pb->period);
+		pwm_disable(pb->pwm);
+	}
 
 	if (pb->enable_gpio)
 		gpiod_set_value(pb->enable_gpio, 0);
