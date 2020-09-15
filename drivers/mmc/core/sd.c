@@ -21,6 +21,8 @@
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/sd.h>
 
+#include <linux/regulator/consumer.h>
+
 #include "core.h"
 #include "bus.h"
 #include "mmc_ops.h"
@@ -1170,58 +1172,6 @@ out:
 	return err;
 }
 
-static int _mmc_sd_shutdown(struct mmc_host *host)
-{
-	int err = 0;
-
-	BUG_ON(!host);
-	BUG_ON(!host->card);
-
-	mmc_claim_host(host);
-
-	if (mmc_card_suspended(host->card))
-		goto out;
-
-	if (!mmc_host_is_spi(host))
-		err = mmc_deselect_cards(host);
-
-	if (!err) {
-		mmc_power_off(host);
-		mmc_card_set_suspended(host->card);
-	}
-
-	/*
-	 * mmc_sd_shutdown is used for SD card, so what we need
-	 * is to make sure we set signal voltage to initial state
-	 * if it's used as main disk. RESTRICT_CARD_TYPE_MMC is
-	 * combined into host->restrict_caps via DT for SD cards
-	 * running system image.
-	 */
-	if (host->restrict_caps & RESTRICT_CARD_TYPE_EMMC) {
-		host->ios.signal_voltage = MMC_SIGNAL_VOLTAGE_330;
-		host->ios.vdd = fls(host->ocr_avail) - 1;
-		mmc_regulator_set_vqmmc(host, &host->ios);
-		pr_info("Set signal voltage to initial state\n");
-	}
-
-out:
-	mmc_release_host(host);
-	return err;
-}
-
-static int mmc_sd_shutdown(struct mmc_host *host)
-{
-	int err;
-
-	err = _mmc_sd_shutdown(host);
-	if (!err) {
-		pm_runtime_disable(&host->card->dev);
-		pm_runtime_set_suspended(&host->card->dev);
-	}
-
-	return err;
-}
-
 /*
  * Callback for suspend
  */
@@ -1233,6 +1183,28 @@ static int mmc_sd_suspend(struct mmc_host *host)
 	if (!err) {
 		pm_runtime_disable(&host->card->dev);
 		pm_runtime_set_suspended(&host->card->dev);
+	}
+
+	return err;
+}
+
+static int mmc_sd_shutdown(struct mmc_host *host)
+{
+	int err;
+
+	err = _mmc_sd_suspend(host);
+	if (!err) {
+		pm_runtime_disable(&host->card->dev);
+		pm_runtime_set_suspended(&host->card->dev);
+	}
+
+	if (!IS_ERR(host->supply.vqmmc)) {
+		int result;
+		regulator_set_voltage(host->supply.vqmmc, 3000000, 3000000);
+		result = regulator_enable(host->supply.vqmmc);
+		if (result) {
+			pr_err("%s %d\n",__func__, __LINE__);
+		}
 	}
 
 	return err;

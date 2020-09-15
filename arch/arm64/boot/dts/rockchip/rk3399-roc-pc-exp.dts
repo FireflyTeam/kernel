@@ -1,0 +1,20 @@
+/dts-v1/;
+#include "rk3399-roc-pc.dtsi"
+
+/ {
+	model = "Firefly roc-rk3399-pc";
+	compatible = "firefly,roc-rk3399-pc", "rockchip,rk3399";
+};
+
+&wireless_wlan {
+	status = "okay";
+};
+
+&wireless_bluetooth {
+	status = "okay";
+};
+
+&usb_charge {
+	status = "okay";
+};
+

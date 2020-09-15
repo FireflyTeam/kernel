@@ -55,8 +55,10 @@
 #include <linux/reset.h>
 #include <linux/of_mdio.h>
 
-#define	STMMAC_ALIGN(x)		__ALIGN_KERNEL(x, SMP_CACHE_BYTES)
+#define RTL_8211F_PHY_ID  0x001cc916
 
+#define	STMMAC_ALIGN(x)		__ALIGN_KERNEL(x, SMP_CACHE_BYTES)
+#define RTL_8201F_PHY_ID  0x001cc816
 /* Module parameters */
 #define TX_TIMEO	5000
 static int watchdog = TX_TIMEO;
@@ -1611,11 +1613,12 @@ static int stmmac_get_hw_features(struct stmmac_priv *priv)
 static void stmmac_check_ether_addr(struct stmmac_priv *priv)
 {
 	if (!is_valid_ether_addr(priv->dev->dev_addr)) {
-		priv->hw->mac->get_umac_addr(priv->hw,
-					     priv->dev->dev_addr, 0);
-		if (likely(priv->plat->get_eth_addr))
+	    if (likely(priv->plat->get_eth_addr))
 			priv->plat->get_eth_addr(priv->plat->bsp_priv,
 				priv->dev->dev_addr);
+		if (!is_valid_ether_addr(priv->dev->dev_addr))
+            priv->hw->mac->get_umac_addr(priv->hw,
+					     priv->dev->dev_addr, 0);
 		if (!is_valid_ether_addr(priv->dev->dev_addr))
 			eth_hw_addr_random(priv->dev);
 		pr_info("%s: device MAC address %pM\n", priv->dev->name,
@@ -2851,6 +2854,53 @@ static int stmmac_hw_init(struct stmmac_priv *priv)
 	return 0;
 }
 
+
+static int phy_rtl8211f_led_fixup(struct phy_device *phydev)
+{
+	int value;
+    	printk("%s in\n", __func__);
+
+    	value = phy_read(phydev, 31);
+    	phy_write(phydev, 31, 0xd04);
+
+    	mdelay(10);
+    	value = phy_read(phydev, 16);
+    	value =0x2340;
+    	phy_write(phydev, 16, value);
+
+    	mdelay(10);
+    	phy_read(phydev, 31);
+    	phy_write(phydev, 31, 0x00);
+
+    	return 0;
+}
+
+static int phy_rtl8201f_led_fixup(struct phy_device *phydev)
+{
+       int value;
+
+       printk("%s in\n", __func__);
+
+       /* switch to page 7 */
+       value = phy_read(phydev, 31);
+       value &= 0xff00;
+       value |= 0x0007;
+       value = phy_write(phydev, 31, value);
+
+       /* set customized led enable */
+       value = phy_read(phydev, 19);
+       value &= 0xffcf;
+       value |= 0x0000;
+       phy_write(phydev, 19, value);
+
+       /* back to page 0 */
+       value = phy_read(phydev, 31);
+       value &= 0x0000;
+       value = phy_write(phydev, 31, value);
+
+       return 0;
+}
+
 #ifdef CONFIG_DWMAC_RK_AUTO_DELAYLINE
 static void stmmac_scan_delayline_dwork(struct work_struct *work)
 {
@@ -3009,6 +3059,14 @@ int stmmac_dvr_probe(struct device *device,
 			goto error_mdio_register;
 		}
 	}
+	
+    ret = phy_register_fixup_for_uid(RTL_8201F_PHY_ID, 0xffffffff, phy_rtl8201f_led_fixup);
+    if (ret)
+         pr_warn("Cannot register PHY board fixup.\n");
+    
+    ret = phy_register_fixup_for_uid(RTL_8211F_PHY_ID, 0xffffffff, phy_rtl8211f_led_fixup);
+    if (ret)
+         pr_warn("Cannot register 8211f PHY board fixup.\n");
 
 	ret = register_netdev(ndev);
 	if (ret) {

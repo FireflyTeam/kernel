@@ -216,6 +216,12 @@
 		method = "smc";
 	};
 
+	cpuinfo {
+		compatible = "rockchip,cpuinfo";
+		nvmem-cells = <&cpu_id>;
+		nvmem-cell-names = "id";
+	};
+
 	timer {
 		compatible = "arm,armv8-timer";
 		interrupts = <GIC_PPI 13 IRQ_TYPE_LEVEL_LOW 0>,
@@ -1706,7 +1712,7 @@
 		};
 	};
 
-	watchdog@ff848000 {
+	wdt: watchdog@ff848000 {
 		compatible = "snps,dw-wdt";
 		reg = <0x0 0xff848000 0x0 0x100>;
 		clocks = <&cru PCLK_WDT>;
@@ -1773,7 +1779,7 @@
 		reg = <0x0 0xff8a0000 0x0 0x1000>;
 		interrupts = <GIC_SPI 41 IRQ_TYPE_LEVEL_HIGH 0>;
 		dmas = <&dmac_bus 4>, <&dmac_bus 5>;
-		dma-names = "tx", "rx";
+		dma-names = "tx";
 		clock-names = "i2s_clk", "i2s_hclk";
 		clocks = <&cru SCLK_I2S2_8CH>, <&cru HCLK_I2S2_8CH>;
 		resets = <&cru SRST_I2S2_8CH>, <&cru SRST_H_I2S2_8CH>;
@@ -2179,6 +2185,7 @@
 	};
 
 	display_subsystem: display-subsystem {
+		u-boot,dm-pre-reloc;
 		compatible = "rockchip,display-subsystem";
 		ports = <&vopl_out>, <&vopb_out>;
 		clocks = <&cru PLL_VPLL>, <&cru PLL_CPLL>;
